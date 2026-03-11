@@ -1,14 +1,11 @@
-const TelegramBot = require('node-telegram-bot-api');
+const { Telegraf } = require('telegraf');
 const fs = require('fs');
 const { telegram } = require('./config');
 
-const bot = new TelegramBot(telegram.token);
+const bot = new Telegraf(telegram.token);
 
 /**
  * Kirim notifikasi + file PDF hasil TTE ke user
- * @param {string} chatId   - Chat ID Telegram user
- * @param {string} nama     - Nama dokumen
- * @param {string} filepath - Path file PDF hasil download
  */
 async function notifyDone(chatId, nama, filepath) {
     if (!chatId) {
@@ -17,21 +14,19 @@ async function notifyDone(chatId, nama, filepath) {
     }
 
     try {
-        // Kirim pesan notifikasi
-        await bot.sendMessage(
+        await bot.telegram.sendMessage(
             chatId,
-            `✅ *Dokumen TTE Selesai!*\n\n📄 *${nama}*\n\nBerikut file PDF yang sudah ditandatangani:`,
-            { parse_mode: 'Markdown' }
+            `✅ *Dokumen TTE Selesai\\!*\n\n📄 *${nama}*\n\nBerikut file PDF yang sudah ditandatangani:`,
+            { parse_mode: 'MarkdownV2' }
         );
 
-        // Kirim file PDF
         if (filepath && fs.existsSync(filepath)) {
-            await bot.sendDocument(chatId, filepath, {
+            await bot.telegram.sendDocument(chatId, { source: filepath }, {
                 caption: `📎 ${nama} — TTE Selesai`
             });
             console.log(`📨 Notifikasi + PDF terkirim ke chatId: ${chatId}`);
         } else {
-            await bot.sendMessage(chatId, '⚠️ File PDF tidak ditemukan, silakan download manual.');
+            await bot.telegram.sendMessage(chatId, '⚠️ File PDF tidak ditemukan, silakan download manual.');
             console.warn(`⚠️ File tidak ditemukan: ${filepath}`);
         }
 
@@ -47,10 +42,10 @@ async function notifyError(chatId, nama, pesan) {
     if (!chatId) return;
 
     try {
-        await bot.sendMessage(
+        await bot.telegram.sendMessage(
             chatId,
-            `❌ *Gagal memproses dokumen*\n\n📄 *${nama}*\n\n${pesan}\n\nSilakan hubungi admin atau coba ajukan ulang.`,
-            { parse_mode: 'Markdown' }
+            `❌ *Gagal memproses dokumen*\n\n📄 *${nama}*\n\n${pesan}\n\nSilakan hubungi admin atau coba ajukan ulang\\.`,
+            { parse_mode: 'MarkdownV2' }
         );
     } catch (err) {
         console.error(`❌ Gagal kirim notifikasi error ke ${chatId}:`, err.message);

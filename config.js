@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 module.exports = {
     url: {
         login: 'https://tte.kemenag.go.id/login',
@@ -6,18 +8,16 @@ module.exports = {
         download: 'https://tte.kemenag.go.id/satker/dokumen/naskah/index/unggah'
     },
 
-    // 👤 AKUN ADMIN (untuk upload)
     admin: {
-        nip: '199404052020121006@kemenag.go.id',      // ← ganti NIP admin
-        password: 'SultenG321',        // ← ganti password admin
+        nip: process.env.ADMIN_NIP,
+        password: process.env.ADMIN_PASSWORD,
+    },
+    signer: {
+        nip: process.env.SIGNER_NIP,
+        password: process.env.SIGNER_PASSWORD,
+        passphrase: process.env.SIGNER_PASSPHRASE
     },
 
-    // ✍️ AKUN PENANDATANGAN
-    signer: {
-        nip: '197907112007011013',
-        password: 'Penmad123',
-        passphrase: 'Ancu_123'
-    },
 
     pejabat: {
         kakanwil: 'H. JUNAIDIN, S.Ag, MA',
@@ -27,7 +27,7 @@ module.exports = {
     },
 
     telegram: {
-        token: '8717583283:AAGZxTOF6JKGYp4HJrcdhf9XqIcQ7xse-Y0',
+        token: process.env.TELEGRAM_TOKEN,
         uploadDir: './uploads'
-    }
+    },
 };
