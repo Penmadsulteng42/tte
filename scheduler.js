@@ -123,14 +123,24 @@ async function runRPA() {
             const downloadedItems = await downloadFinal(dlPage, toDownloadFinal, downloadDir);
 
             for (const downloaded of downloadedItems) {
-                await updateStatus(downloaded.row, 'DOWNLOADED');
-                console.log(`✅ ${downloaded.nama} → DOWNLOADED`);
-
-                // Cari chatId dari queue untuk notifikasi
+                // Cari item asli dari queue untuk ambil chatId
                 const qItem = toDownloadFinal.find(i => i.nama === downloaded.nama);
+
                 if (qItem && qItem.chatId) {
+                    // Ada chatId → kirim ke Telegram → status SENT
                     const filepath = path.join(downloadDir, downloaded.filename);
-                    await notifyDone(qItem.chatId, downloaded.nama, filepath);
+                    const terkirim = await notifyDone(qItem.chatId, downloaded.nama, filepath);
+                    if (terkirim) {
+                        await updateStatus(downloaded.row, 'SENT');
+                        console.log(`✅ ${downloaded.nama} → SENT (terkirim ke Telegram)`);
+                    } else {
+                        await updateStatus(downloaded.row, 'DOWNLOADED');
+                        console.log(`⚠️ ${downloaded.nama} → DOWNLOADED (gagal kirim Telegram)`);
+                    }
+                } else {
+                    // Tidak ada chatId → status DOWNLOADED saja
+                    await updateStatus(downloaded.row, 'DOWNLOADED');
+                    console.log(`✅ ${downloaded.nama} → DOWNLOADED (tidak ada chatId)`);
                 }
             }
 
@@ -158,6 +168,6 @@ console.log('   Ketik Ctrl+C untuk menghentikan\n');
 runRPA();
 
 // Jadwalkan berikutnya
-cron.schedule('*/1 * * * *', () => {
+cron.schedule('*/10 * * * *', () => {
     runRPA();
 });

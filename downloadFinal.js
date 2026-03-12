@@ -121,7 +121,16 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
 
             const buffer = await response.body();
             const filename = safeFilename(found.waktu, found.nama);
-            const filepath = path.join(downloadDir, filename);
+            let filepath = path.join(downloadDir, filename);
+
+            // Jika file sudah ada dan tidak kosong, beri nama unik
+            if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
+                const ts = Date.now();
+                const ext = path.extname(filename);
+                const base = path.basename(filename, ext);
+                filepath = path.join(downloadDir, `${base}_${ts}${ext}`);
+                console.log(`   ℹ️ File sudah ada, simpan sebagai: ${path.basename(filepath)}`);
+            }
 
             fs.writeFileSync(filepath, buffer);
 
@@ -131,7 +140,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
                 throw new Error('File 0 bytes');
             }
 
-            console.log(`   ✅ ${filename} (${(fileSize / 1024).toFixed(1)} KB)`);
+            console.log(`   ✅ ${path.basename(filepath)} (${(fileSize / 1024).toFixed(1)} KB)`);
 
             await popup.close();
             await page.waitForTimeout(2000);
@@ -139,7 +148,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
             downloadedItems.push({
                 row: item.row,
                 key: docKey(found.waktu, found.nama),
-                filename,
+                filename: path.basename(filepath),
                 nama: item.nama
             });
 
