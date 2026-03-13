@@ -122,25 +122,21 @@ async function runRPA() {
 
             const downloadedItems = await downloadFinal(dlPage, toDownloadFinal, downloadDir);
 
-            for (const downloaded of downloadedItems) {
-                // Cari item asli dari queue untuk ambil chatId
-                const qItem = toDownloadFinal.find(i => i.nama === downloaded.nama);
-
-                if (qItem && qItem.chatId) {
-                    // Ada chatId → kirim ke Telegram → status SENT
-                    const filepath = path.join(downloadDir, downloaded.filename);
-                    const terkirim = await notifyDone(qItem.chatId, downloaded.nama, filepath);
+            for (const item of downloadedItems) {
+                if (item.chatId) {
+                    // Ada chatId → kirim PDF dari buffer langsung ke Telegram
+                    const terkirim = await notifyDone(item.chatId, item.nama, item.buffer, item.filename);
                     if (terkirim) {
-                        await updateStatus(downloaded.row, 'SENT');
-                        console.log(`✅ ${downloaded.nama} → SENT (terkirim ke Telegram)`);
+                        await updateStatus(item.row, 'SENT');
+                        console.log(`✅ ${item.nama} → SENT (terkirim ke Telegram)`);
                     } else {
-                        await updateStatus(downloaded.row, 'DOWNLOADED');
-                        console.log(`⚠️ ${downloaded.nama} → DOWNLOADED (gagal kirim Telegram)`);
+                        await updateStatus(item.row, 'DOWNLOADED');
+                        console.log(`⚠️ ${item.nama} → DOWNLOADED (gagal kirim Telegram)`);
                     }
                 } else {
-                    // Tidak ada chatId → status DOWNLOADED saja
-                    await updateStatus(downloaded.row, 'DOWNLOADED');
-                    console.log(`✅ ${downloaded.nama} → DOWNLOADED (tidak ada chatId)`);
+                    // Tidak ada chatId → sudah disimpan ke disk di downloadFinal
+                    await updateStatus(item.row, 'DOWNLOADED');
+                    console.log(`✅ ${item.nama} → DOWNLOADED (disimpan ke disk)`);
                 }
             }
 
@@ -157,17 +153,17 @@ async function runRPA() {
 }
 
 // ============================================================
-//  JADWAL: Jalankan RPA setiap 10 menit
-//  Format cron: '*/10 * * * *' = setiap 10 menit
-//  Ganti angka 10 sesuai kebutuhan
+//  JADWAL: Jalankan RPA setiap 5 menit
+//  Format cron: '*/5 * * * *' = setiap 5 menit
+//  Ganti angka 5 sesuai kebutuhan
 // ============================================================
-console.log('⏰ Scheduler aktif — RPA akan jalan setiap 10 menit');
+console.log('⏰ Scheduler aktif — RPA akan jalan setiap 5 menit');
 console.log('   Ketik Ctrl+C untuk menghentikan\n');
 
 // Jalankan sekali saat pertama start
 runRPA();
 
 // Jadwalkan berikutnya
-cron.schedule('*/10 * * * *', () => {
+cron.schedule('*/5 * * * *', () => {
     runRPA();
 });

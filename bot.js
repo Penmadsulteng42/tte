@@ -29,17 +29,49 @@ function getNamaUser(ctx) {
 }
 
 // ============================================================
-//  HELPER: Keyboard pejabat
+//  HELPER: Semua pejabat yang sudah dipilih di sesi ini
+//  (pemaraf + semua penandatangan yang sudah dipilih)
 // ============================================================
-function keyboardPejabat(exclude = []) {
+function sudahDipilih(s) {
+    return [...s.pemaraf, ...s.penandatangan];
+}
+
+// ============================================================
+//  HELPER: Keyboard pejabat dengan exclude otomatis
+//  exclude = daftar key pejabat yang tidak boleh muncul lagi
+// ============================================================
+function keyboardPejabat(exclude = [], labelLewati = '⏭️ Tidak Ada / Lewati') {
     const semua = ['kakanwil', 'kabid', 'kabag', 'bendahara'];
     const pilihan = semua.filter(p => !exclude.includes(p));
+
+    if (pilihan.length === 0) {
+        // Semua pejabat sudah dipilih, hanya tampilkan tombol Lewati
+        return Markup.inlineKeyboard([
+            [Markup.button.callback(labelLewati, 'pejabat_skip')]
+        ]);
+    }
+
     return Markup.inlineKeyboard([
         pilihan.map(p => Markup.button.callback(
             p.charAt(0).toUpperCase() + p.slice(1),
             `pejabat_${p}`
         )),
-        [Markup.button.callback('⏭️ Tidak Ada / Lewati', 'pejabat_skip')]
+        [Markup.button.callback(labelLewati, 'pejabat_skip')]
+    ]);
+}
+
+// ============================================================
+//  HELPER: Keyboard pemaraf (multi-select dengan centang)
+// ============================================================
+function keyboardPemaraf(selected = [], exclude = []) {
+    const semua = ['kakanwil', 'kabid', 'kabag', 'bendahara'];
+    const pilihan = semua.filter(p => !exclude.includes(p));
+    return Markup.inlineKeyboard([
+        pilihan.map(p => Markup.button.callback(
+            selected.includes(p) ? `✅ ${p.charAt(0).toUpperCase() + p.slice(1)}` : p.charAt(0).toUpperCase() + p.slice(1),
+            `pemaraf_${p}`
+        )),
+        [Markup.button.callback('✔️ Selesai Pilih Pemaraf', 'pemaraf_done')]
     ]);
 }
 
@@ -58,17 +90,30 @@ function keyboardAnchor(selected = []) {
 }
 
 // ============================================================
-//  HELPER: Ringkasan
+//  HELPER: Ringkasan (plain text untuk hindari escaping error)
 // ============================================================
 function formatRingkasan(s) {
-    let text = `📋 *Ringkasan Pengajuan TTE*\n\n`;
-    text += `📄 *Nama Dokumen:* ${s.namaDokumen}\n`;
-    text += `👥 *Pemaraf:* ${s.pemaraf.length > 0 ? s.pemaraf.join(', ') : 'Tidak ada'}\n\n`;
+    let text = `📋 Ringkasan Pengajuan TTE\n\n`;
+    text += `📄 Nama Dokumen: ${s.namaDokumen}\n`;
+    text += `👥 Pemaraf: ${s.pemaraf.length > 0 ? s.pemaraf.join(', ') : 'Tidak ada'}\n\n`;
     for (let i = 0; i < s.penandatangan.length; i++) {
-        text += `✍️ *Penandatangan ${i + 1}:* ${s.penandatangan[i]}\n`;
-        text += `🔑 *Anchor ${i + 1}:* ${s.anchor[i].join(', ')}\n\n`;
+        text += `✍️ Penandatangan ${i + 1}: ${s.penandatangan[i]}\n`;
+        text += `🔑 Anchor ${i + 1}: ${s.anchor[i].join(', ')}\n\n`;
     }
     return text;
+}
+
+// ============================================================
+//  HELPER: Label status yang informatif
+// ============================================================
+function labelStatus(status) {
+    switch (status) {
+        case 'UPLOADED': return '📤 Menunggu ditandatangani';
+        case 'SIGNED': return '✍️ Menunggu diproses / diparaf (sedang antrian download)';
+        case 'DOWNLOADED': return '✅ Selesai (tersimpan di server)';
+        case 'SENT': return '✅ Selesai (terkirim ke Telegram)';
+        default: return '⏳ Menunggu diproses';
+    }
 }
 
 // ============================================================
@@ -93,9 +138,9 @@ async function downloadFile(ctx, fileId, destPath) {
 // ============================================================
 bot.start((ctx) => {
     const nama = getNamaUser(ctx);
-    ctx.replyWithMarkdown(
-        `👋 Halo *${nama}*\\!\n\n` +
-        `Selamat datang di *TTE Automation Bot*\\.\n\n` +
+    ctx.reply(
+        `👋 Halo ${nama}!\n\n` +
+        `Selamat datang di TTE Automation Bot.\n\n` +
         `📌 Perintah yang tersedia:\n` +
         `/ajukan — Ajukan dokumen TTE baru\n` +
         `/status  — Cek status dokumen Anda\n` +
@@ -120,7 +165,7 @@ bot.command('ajukan', (ctx) => {
         chatId
     };
 
-    ctx.replyWithMarkdown('📝 *Pengajuan TTE Baru*\n\nLangkah 1 — Ketik *nama dokumen*:');
+    ctx.reply('📝 Pengajuan TTE Baru\n\nLangkah 1 — Ketik nama dokumen:');
 });
 
 // ============================================================
@@ -147,16 +192,13 @@ bot.command('status', async (ctx) => {
             return;
         }
 
-        let text = '📊 *Status Dokumen Anda:*\n\n';
+        let text = '📊 Status Dokumen Anda:\n\n';
         milik.forEach((item, i) => {
-            const status = item.status || 'Menunggu';
-            const emoji = status === 'DOWNLOADED' ? '✅' :
-                status === 'SIGNED' ? '✍️' :
-                    status === 'UPLOADED' ? '📤' : '⏳';
-            text += `${i + 1}\\. ${emoji} *${item.nama}*\n   Status: ${status}\n\n`;
+            text += `${i + 1}. ${item.nama}\n`;
+            text += `   ${labelStatus(item.status)}\n\n`;
         });
 
-        ctx.replyWithMarkdown(text);
+        ctx.reply(text);
     } catch (err) {
         ctx.reply('❌ Gagal mengambil data. Coba lagi nanti.');
     }
@@ -179,7 +221,7 @@ bot.command('kirim', (ctx) => {
     }
 
     sessions[chatId].step = 'tunggu_pdf';
-    ctx.replyWithMarkdown('📎 Silakan kirim *file PDF* dokumen Anda sekarang.');
+    ctx.reply('📎 Silakan kirim file PDF dokumen Anda sekarang.');
 });
 
 // ============================================================
@@ -199,9 +241,9 @@ bot.on('text', async (ctx) => {
         s.namaDokumen = text.trim();
         s.step = 'pemaraf';
 
-        ctx.replyWithMarkdown(
-            `✅ Nama: *${s.namaDokumen}*\n\nLangkah 2 — Pilih *pemaraf*:\n_(Pilih semua, lalu klik Lewati jika sudah selesai)_`,
-            keyboardPejabat()
+        ctx.reply(
+            `✅ Nama: ${s.namaDokumen}\n\nLangkah 2 — Pilih pemaraf:\n(Pilih semua, lalu klik Lewati jika sudah selesai)`,
+            keyboardPejabat(sudahDipilih(s))
         );
     }
 });
@@ -220,7 +262,7 @@ bot.on('document', async (ctx) => {
     const doc = ctx.message.document;
 
     if (doc.mime_type !== 'application/pdf') {
-        ctx.replyWithMarkdown('❌ File harus berformat *PDF*. Coba kirim ulang.');
+        ctx.reply('❌ File harus berformat PDF. Coba kirim ulang.');
         return;
     }
 
@@ -253,11 +295,11 @@ bot.on('document', async (ctx) => {
 
         delete sessions[chatId];
 
-        ctx.replyWithMarkdown(
-            '✅ *Dokumen berhasil diajukan\\!*\n\n' +
-            'Dokumen Anda sedang dalam antrian\\.\n' +
-            'Hasil TTE akan dikirim otomatis ke chat ini\\.\n\n' +
-            'Gunakan /status untuk memantau\\.'
+        ctx.reply(
+            '✅ Dokumen berhasil diajukan!\n\n' +
+            'Dokumen Anda sedang dalam antrian.\n' +
+            'Hasil TTE akan dikirim otomatis ke chat ini.\n\n' +
+            'Gunakan /status untuk memantau.'
         );
 
     } catch (err) {
@@ -284,17 +326,20 @@ bot.on('callback_query', async (ctx) => {
     // --- PEMARAF ---
     if (s.step === 'pemaraf') {
         if (data === 'pejabat_skip') {
+            // Lanjut ke penandatangan — exclude semua yang sudah dipilih
             s.step = 'penandatangan';
-            ctx.replyWithMarkdown(
-                `✅ Pemaraf: *${s.pemaraf.length > 0 ? s.pemaraf.join(', ') : 'Tidak ada'}*\n\nLangkah 3 — Pilih *Penandatangan 1*:`,
-                keyboardPejabat(s.pemaraf)
+            ctx.reply(
+                `✅ Pemaraf: ${s.pemaraf.length > 0 ? s.pemaraf.join(', ') : 'Tidak ada'}\n\nLangkah 3 — Pilih Penandatangan 1:`,
+                keyboardPejabat(sudahDipilih(s), '⏭️ Selesai / Lanjut ke Ringkasan')
             );
         } else if (data.startsWith('pejabat_')) {
             const key = data.replace('pejabat_', '');
             if (!s.pemaraf.includes(key)) s.pemaraf.push(key);
-            ctx.replyWithMarkdown(
-                `✅ *${key}* ditambahkan sebagai pemaraf\\.\nPilih lagi atau klik Lewati jika sudah selesai\\.`,
-                keyboardPejabat()
+
+            // Update keyboard — exclude semua yang sudah dipilih sebagai pemaraf
+            ctx.reply(
+                `✅ ${key} ditambahkan sebagai pemaraf.\nPilih lagi atau klik Lewati jika sudah selesai.`,
+                keyboardPejabat(sudahDipilih(s))
             );
         }
         return;
@@ -308,17 +353,17 @@ bot.on('callback_query', async (ctx) => {
                 return;
             }
             s.step = 'konfirmasi';
-            ctx.replyWithMarkdown(
+            ctx.reply(
                 formatRingkasan(s) +
-                '\nJika sudah benar, ketik /kirim untuk upload PDF\\.\nKetik /batal untuk membatalkan\\.'
+                '\nJika sudah benar, ketik /kirim untuk upload PDF.\nKetik /batal untuk membatalkan.'
             );
         } else if (data.startsWith('pejabat_')) {
             const key = data.replace('pejabat_', '');
             s.penandatangan.push(key);
             s.currentAnchor = [];
             s.step = 'anchor';
-            ctx.replyWithMarkdown(
-                `✅ Penandatangan ${s.penandatangan.length}: *${key}*\n\nLangkah 4 — Pilih *anchor* \\(boleh lebih dari satu\\):`,
+            ctx.reply(
+                `✅ Penandatangan ${s.penandatangan.length}: ${key}\n\nLangkah 4 — Pilih anchor (boleh lebih dari satu):`,
                 keyboardAnchor()
             );
         }
@@ -337,8 +382,8 @@ bot.on('callback_query', async (ctx) => {
 
             if (s.penandatangan.length < 4) {
                 s.step = 'tanya_tambah';
-                ctx.replyWithMarkdown(
-                    `✅ Anchor ${s.penandatangan.length}: *${s.anchor[s.anchor.length - 1].join(', ')}*\n\nApakah ada *Penandatangan ${s.penandatangan.length + 1}*?`,
+                ctx.reply(
+                    `✅ Anchor ${s.penandatangan.length}: ${s.anchor[s.anchor.length - 1].join(', ')}\n\nApakah ada Penandatangan ${s.penandatangan.length + 1}?`,
                     Markup.inlineKeyboard([[
                         Markup.button.callback('✅ Ya', 'tambah_ya'),
                         Markup.button.callback('❌ Tidak', 'tambah_tidak')
@@ -346,9 +391,9 @@ bot.on('callback_query', async (ctx) => {
                 );
             } else {
                 s.step = 'konfirmasi';
-                ctx.replyWithMarkdown(
+                ctx.reply(
                     formatRingkasan(s) +
-                    '\nJika sudah benar, ketik /kirim untuk upload PDF\\.\nKetik /batal untuk membatalkan\\.'
+                    '\nJika sudah benar, ketik /kirim untuk upload PDF.\nKetik /batal untuk membatalkan.'
                 );
             }
         } else if (data.startsWith('anchor_')) {
@@ -367,15 +412,16 @@ bot.on('callback_query', async (ctx) => {
     if (s.step === 'tanya_tambah') {
         if (data === 'tambah_ya') {
             s.step = 'penandatangan';
-            ctx.replyWithMarkdown(
-                `✍️ Pilih *Penandatangan ${s.penandatangan.length + 1}*:`,
-                keyboardPejabat(s.pemaraf)
+            // Exclude semua yang sudah dipilih (pemaraf + penandatangan sebelumnya)
+            ctx.reply(
+                `✍️ Pilih Penandatangan ${s.penandatangan.length + 1}:`,
+                keyboardPejabat(sudahDipilih(s), '⏭️ Selesai / Lanjut ke Ringkasan')
             );
         } else if (data === 'tambah_tidak') {
             s.step = 'konfirmasi';
-            ctx.replyWithMarkdown(
+            ctx.reply(
                 formatRingkasan(s) +
-                '\nJika sudah benar, ketik /kirim untuk upload PDF\\.\nKetik /batal untuk membatalkan\\.'
+                '\nJika sudah benar, ketik /kirim untuk upload PDF.\nKetik /batal untuk membatalkan.'
             );
         }
         return;
