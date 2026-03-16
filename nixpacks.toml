@@ -1,11 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs", "playwright-driver"]
+nixPkgs = ["chromium"]
 
-[phases.install]
-cmds = [
-    "npm install",
-    "npx playwright install chromium --with-deps"
-]
-
-[start]
-cmd = "node scheduler.js"
+[phases.build]
+cmds = ["npm install", "npx playwright install chromium"]
