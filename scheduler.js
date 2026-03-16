@@ -44,6 +44,9 @@ async function runRPA() {
         ]
     });
 
+    // Set default timeout 60 detik untuk semua operasi
+    browser.defaultBrowserContext().setDefaultTimeout = 60000;
+
     try {
         const queue = await readRows();
 
@@ -67,6 +70,7 @@ async function runRPA() {
 
             const adminCtx = await browser.newContext({ viewport: null });
             const adminPage = await adminCtx.newPage();
+            adminPage.setDefaultTimeout(60000);
             await loginAdmin(adminPage);
 
             for (const item of toUpload) {
@@ -96,6 +100,7 @@ async function runRPA() {
 
             const signerCtx = await browser.newContext({ viewport: null });
             const signerPage = await signerCtx.newPage();
+            signerPage.setDefaultTimeout(60000);
             await loginSigner(signerPage);
 
             const signedItems = await signInbox(signerPage, toSignFinal);
@@ -125,6 +130,7 @@ async function runRPA() {
 
             const dlCtx = await browser.newContext({ viewport: null });
             const dlPage = await dlCtx.newPage();
+            dlPage.setDefaultTimeout(60000);
             await loginAdmin(dlPage);
 
             const downloadedItems = await downloadFinal(dlPage, toDownloadFinal, downloadDir);
@@ -171,6 +177,6 @@ console.log('   Ketik Ctrl+C untuk menghentikan\n');
 runRPA();
 
 // Jadwalkan berikutnya
-cron.schedule('*/5 * * * *', () => {
+cron.schedule('*/1 * * * *', () => {
     runRPA();
 });
