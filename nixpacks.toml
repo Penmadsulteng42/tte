@@ -1,5 +1,29 @@
 [phases.setup]
-nixPkgs = ["chromium"]
+nixPkgs = [
+    "chromium",
+    "nss",
+    "nspr",
+    "atk",
+    "cups",
+    "dbus",
+    "expat",
+    "libdrm",
+    "libxcb",
+    "xorg.libX11",
+    "xorg.libXcomposite",
+    "xorg.libXdamage",
+    "xorg.libXext",
+    "xorg.libXfixes",
+    "xorg.libXrandr",
+    "xorg.libxkbcommon",
+    "mesa",
+    "pango",
+    "cairo",
+    "alsa-lib"
+]
 
 [phases.build]
-cmds = ["npm install", "npx playwright install chromium"]
+cmds = ["npm ci", "npx playwright install chromium"]
+
+[start]
+cmd = "node scheduler.js"
