@@ -266,16 +266,14 @@ bot.on('document', async (ctx) => {
         return;
     }
 
-    await ctx.reply('⏳ Mengunduh file...');
+    await ctx.reply('⏳ Memproses file...');
 
     const s = sessions[chatId];
 
     try {
-        const ts = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-        const filename = `${ts}_${s.namaDokumen}.pdf`;
-        const filepath = path.join(telegram.uploadDir, filename);
-
-        await downloadFile(ctx, doc.file_id, filepath);
+        // Ambil URL file dari Telegram — simpan sebagai linkFileLocal
+        const fileLink = await ctx.telegram.getFileLink(doc.file_id);
+        const fileUrl = fileLink.href;
 
         await appendRow({
             namaDokumen: s.namaDokumen,
@@ -289,7 +287,7 @@ bot.on('document', async (ctx) => {
             penandatangan4: s.penandatangan[3] || '',
             anchor4: (s.anchor[3] || []).join(', '),
             tahun: new Date().getFullYear(),
-            linkFileLocal: path.resolve(filepath),
+            linkFileLocal: fileUrl,   // URL Telegram — diakses saat upload
             chatId: String(chatId)
         });
 
