@@ -434,6 +434,13 @@ bot.on('callback_query', async (ctx) => {
 bot.launch();
 console.log('🤖 TTE Bot aktif dan siap menerima pesan...');
 
+// ============================================================
+//  Jalankan scheduler (jika belum jalan)
+//  Di Railway, biasanya hanya ada 1 proses sehingga kita
+//  jalankan scheduler di dalam proses bot agar cron tetap aktif.
+// ============================================================
+require('./scheduler');
+
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

@@ -4,8 +4,9 @@
   "description": "TTE Automation dengan Telegram Bot",
   "main": "index.js",
   "scripts": {
-    "start": "node scheduler.js",
+    "start": "node bot.js",
     "bot": "node bot.js",
+    "scheduler": "node scheduler.js",
     "rpa": "node index.js"
   },
   "keywords": [],
