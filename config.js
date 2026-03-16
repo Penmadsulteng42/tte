@@ -8,17 +8,20 @@ module.exports = {
         download: 'https://tte.kemenag.go.id/satker/dokumen/naskah/index/unggah'
     },
 
+    // 👤 AKUN ADMIN
     admin: {
         nip: process.env.ADMIN_NIP,
         password: process.env.ADMIN_PASSWORD,
     },
+
+    // ✍️ AKUN PENANDATANGAN
     signer: {
         nip: process.env.SIGNER_NIP,
         password: process.env.SIGNER_PASSWORD,
         passphrase: process.env.SIGNER_PASSPHRASE
     },
 
-
+    // 🏛️ DAFTAR PEJABAT
     pejabat: {
         kakanwil: 'H. JUNAIDIN, S.Ag, MA',
         kabag: 'MOH. TASLIM, S.Ag.,M.M',
@@ -26,8 +29,9 @@ module.exports = {
         bendahara: 'SAKINA, S.AP'
     },
 
+    // 🤖 TELEGRAM BOT
     telegram: {
         token: process.env.TELEGRAM_TOKEN,
         uploadDir: './uploads'
-    },
+    }
 };
