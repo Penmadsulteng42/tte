@@ -15,8 +15,13 @@ const downloadFinal = require('./downloadFinal');
     if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir);
 
     const browser = await chromium.launch({
-        headless: false,
-        args: ['--start-maximized']
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+        ]
     });
 
     /* ==========================================

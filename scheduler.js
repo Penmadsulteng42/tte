@@ -33,8 +33,13 @@ async function runRPA() {
     console.log('='.repeat(50));
 
     const browser = await chromium.launch({
-        headless: false,
-        args: ['--start-maximized']
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+        ]
     });
 
     try {
@@ -164,6 +169,6 @@ console.log('   Ketik Ctrl+C untuk menghentikan\n');
 runRPA();
 
 // Jadwalkan berikutnya
-cron.schedule('*/1 * * * *', () => {
+cron.schedule('*/5 * * * *', () => {
     runRPA();
 });
