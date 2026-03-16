@@ -44,9 +44,6 @@ async function runRPA() {
         ]
     });
 
-    // Set default timeout 60 detik untuk semua operasi
-    browser.defaultBrowserContext().setDefaultTimeout = 60000;
-
     try {
         const queue = await readRows();
 
@@ -177,6 +174,6 @@ console.log('   Ketik Ctrl+C untuk menghentikan\n');
 runRPA();
 
 // Jadwalkan berikutnya
-cron.schedule('*/1 * * * *', () => {
+cron.schedule('*/5 * * * *', () => {
     runRPA();
 });
