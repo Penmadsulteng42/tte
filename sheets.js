@@ -1,10 +1,25 @@
 const { google } = require('googleapis');
 const { v4: uuidv4 } = require('uuid');
 
-const auth = new google.auth.GoogleAuth({
-    keyFile: 'service-account.json',
-    scopes: ['https://www.googleapis.com/auth/spreadsheets']
-});
+// Load .env jika ada (lokal), tidak akan menimpa variable yang sudah ada (Railway)
+require('dotenv').config();
+
+// Baca credentials dari environment variable (Railway)
+// atau dari file lokal (komputer lokal)
+let auth;
+console.log('GOOGLE_CREDENTIALS:', process.env.GOOGLE_CREDENTIALS ? 'ADA' : 'TIDAK ADA');
+if (process.env.GOOGLE_CREDENTIALS) {
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+    auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+} else {
+    auth = new google.auth.GoogleAuth({
+        keyFile: 'service-account.json',
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+}
 
 const SPREADSHEET_ID = '1sOWTiTA2RjiWbl8UuRw8D-p_tqEsy8LrHXmrDRquYDY';
 const SHEET_NAME = 'QUEUE_NEW';
