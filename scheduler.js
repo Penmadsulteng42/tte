@@ -164,6 +164,6 @@ console.log('   Ketik Ctrl+C untuk menghentikan\n');
 runRPA();
 
 // Jadwalkan berikutnya
-cron.schedule('*/5 * * * *', () => {
+cron.schedule('*/1 * * * *', () => {
     runRPA();
 });
