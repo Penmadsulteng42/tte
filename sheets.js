@@ -22,7 +22,7 @@ if (process.env.GOOGLE_CREDENTIALS) {
 }
 
 const SPREADSHEET_ID = '1sOWTiTA2RjiWbl8UuRw8D-p_tqEsy8LrHXmrDRquYDY';
-const SHEET_NAME     = 'QUEUE_NEW';
+const SHEET_NAME = 'QUEUE_NEW';
 
 /*
  * STRUKTUR KOLOM QUEUE_NEW (A–O):
@@ -42,7 +42,7 @@ const SHEET_NAME     = 'QUEUE_NEW';
 async function readRows() {
     try {
         const authClient = await auth.getClient();
-        const sheets     = google.sheets({ version: 'v4', auth: authClient });
+        const sheets = google.sheets({ version: 'v4', auth: authClient });
 
         const res = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
@@ -52,22 +52,22 @@ async function readRows() {
         const rows = res.data.values || [];
 
         return rows.map((row, index) => ({
-            row:            index + 2,
-            id:             row[0]  || '',
-            nama:           row[1]  || '',
-            pemaraf:        row[2]  || '',
-            penandatangan1: row[3]  || '',
-            anchor1:        row[4]  || '',
-            penandatangan2: row[5]  || '',
-            anchor2:        row[6]  || '',
-            penandatangan3: row[7]  || '',
-            anchor3:        row[8]  || '',
-            penandatangan4: row[9]  || '',
-            anchor4:        row[10] || '',
-            tahun:          Number(row[11] || 0),
-            linkFileLocal:  row[12] || '',
-            status:         row[13] || '',
-            chatId:         row[14] || ''   // O — Chat ID Telegram
+            row: index + 2,
+            id: row[0] || '',
+            nama: row[1] || '',
+            pemaraf: row[2] || '',
+            penandatangan1: row[3] || '',
+            anchor1: row[4] || '',
+            penandatangan2: row[5] || '',
+            anchor2: row[6] || '',
+            penandatangan3: row[7] || '',
+            anchor3: row[8] || '',
+            penandatangan4: row[9] || '',
+            anchor4: row[10] || '',
+            tahun: Number(row[11] || 0),
+            linkFileLocal: row[12] || '',
+            status: row[13] || '',
+            chatId: row[14] || ''   // O — Chat ID Telegram
         }));
 
     } catch (err) {
@@ -79,11 +79,11 @@ async function readRows() {
 async function appendRow(item) {
     try {
         const authClient = await auth.getClient();
-        const sheets     = google.sheets({ version: 'v4', auth: authClient });
+        const sheets = google.sheets({ version: 'v4', auth: authClient });
 
         await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
-            range:         `${SHEET_NAME}!A:O`,
+            range: `${SHEET_NAME}!A:O`,
             valueInputOption: 'RAW',
             requestBody: {
                 values: [[
@@ -117,13 +117,13 @@ async function appendRow(item) {
 async function updateStatus(rowNumber, status) {
     try {
         const authClient = await auth.getClient();
-        const sheets     = google.sheets({ version: 'v4', auth: authClient });
+        const sheets = google.sheets({ version: 'v4', auth: authClient });
 
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range:         `${SHEET_NAME}!N${rowNumber}`,
+            range: `${SHEET_NAME}!N${rowNumber}`,
             valueInputOption: 'RAW',
-            requestBody:   { values: [[status]] }
+            requestBody: { values: [[status]] }
         });
 
         console.log(`📝 Baris ${rowNumber} updated → ${status}`);
