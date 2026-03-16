@@ -1,6 +1,6 @@
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
-const { url } = require('./config');
+const { url }                  = require('./config');
 const { docKey, safeFilename } = require('./utils');
 
 /**
@@ -12,14 +12,14 @@ async function cariDiTabel(page, namaCari) {
     while (true) {
         await page.waitForSelector('table tbody tr', { timeout: 10000 });
 
-        const rows = page.locator('table tbody tr');
+        const rows  = page.locator('table tbody tr');
         const count = await rows.count();
         console.log(`   🔍 Halaman ${currentPage}: ${count} baris`);
 
         for (let i = 0; i < count; i++) {
-            const row = rows.nth(i);
+            const row   = rows.nth(i);
             const waktu = (await row.locator('td').nth(1).innerText()).trim();
-            const nama = (await row.locator('td').nth(2).innerText()).trim();
+            const nama  = (await row.locator('td').nth(2).innerText()).trim();
 
             const cocok =
                 nama.toLowerCase().includes(namaCari.toLowerCase()) ||
@@ -28,8 +28,8 @@ async function cariDiTabel(page, namaCari) {
             if (!cocok) continue;
 
             // Cek kolom Status — harus "Sukses" agar semua penandatangan sudah selesai
-            const statusTd = await row.locator('td').nth(4).innerText();
-            const isSukses = statusTd.toLowerCase().includes('sukses');
+            const statusTd  = await row.locator('td').nth(4).innerText();
+            const isSukses  = statusTd.toLowerCase().includes('sukses');
 
             if (!isSukses) {
                 console.log(`   ⚠️ Ditemukan '${nama}' tapi status: ${statusTd.trim()} (belum Sukses), dilewati`);
@@ -77,7 +77,7 @@ async function cariDiTabel(page, namaCari) {
  * - Jika tidak ada chatId → simpan ke disk
  */
 module.exports = async function downloadFinal(page, queueItems, downloadDir) {
-    await page.goto(url.download, { waitUntil: 'networkidle' });
+    await page.goto(url.download, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForSelector('table tbody tr');
 
     console.log(`\n📋 Total queue SIGNED: ${queueItems.length} dokumen`);
@@ -89,7 +89,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
         console.log(`\n[${q + 1}/${queueItems.length}] Mencari: ${item.nama}`);
 
         // Kembali ke halaman 1 untuk setiap dokumen
-        await page.goto(url.download, { waitUntil: 'networkidle' });
+        await page.goto(url.download, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForSelector('table tbody tr');
 
         const found = await cariDiTabel(page, item.nama);
@@ -106,7 +106,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
                 found.finalBtn.first().click()
             ]);
 
-            await popup.waitForLoadState('networkidle', { timeout: 15000 });
+            await popup.waitForLoadState('load', { timeout: 60000 });
 
             // Ambil URL PDF dari popup — ini URL dokumen yang sudah ditandatangani
             const pdfUrl = popup.url();
@@ -125,7 +125,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
                 throw new Error(`HTTP ${response.status()} saat fetch PDF`);
             }
 
-            const buffer = await response.body();
+            const buffer   = await response.body();
             const filename = safeFilename(found.waktu, found.nama);
 
             if (!buffer || buffer.length === 0) {
@@ -139,11 +139,11 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
             await page.waitForTimeout(2000);
 
             processedItems.push({
-                row: item.row,
-                key: docKey(found.waktu, found.nama),
+                row:      item.row,
+                key:      docKey(found.waktu, found.nama),
                 filename,
-                nama: item.nama,
-                chatId: item.chatId,
+                nama:     item.nama,
+                chatId:   item.chatId,
                 buffer,           // PDF di memory — langsung kirim ke Telegram
                 filepath: null    // diisi jika perlu simpan ke disk
             });
@@ -157,7 +157,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
                 for (const p of allPages) {
                     if (p !== page) await p.close();
                 }
-            } catch (_) { }
+            } catch (_) {}
 
             await page.waitForTimeout(2000);
         }
@@ -170,10 +170,10 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
                 let filepath = path.join(downloadDir, item.filename);
 
                 if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
-                    const ts = Date.now();
-                    const ext = path.extname(item.filename);
+                    const ts   = Date.now();
+                    const ext  = path.extname(item.filename);
                     const base = path.basename(item.filename, ext);
-                    filepath = path.join(downloadDir, `${base}_${ts}${ext}`);
+                    filepath   = path.join(downloadDir, `${base}_${ts}${ext}`);
                 }
 
                 fs.writeFileSync(filepath, item.buffer);

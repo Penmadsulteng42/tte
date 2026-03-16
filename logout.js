@@ -45,7 +45,7 @@ module.exports = async function logout(page) {
 
         if (logoutLink) {
             await logoutLink.click();
-            await page.waitForLoadState('networkidle', { timeout: 10000 });
+            await page.waitForLoadState('load', { timeout: 60000 });
             console.log('✅ Logout berhasil');
         } else {
             // Fallback: tutup browser context saja

@@ -5,7 +5,7 @@ const config = require('./config.js');
 module.exports = async function uploadDocument(page, item) {
     try {
         console.log(`🚀 Menuju halaman unggah untuk: ${item.nama}`);
-        await page.goto('https://tte.kemenag.go.id/satker/dokumen/naskah/create', { waitUntil: 'networkidle' });
+        await page.goto('https://tte.kemenag.go.id/satker/dokumen/naskah/create', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         // --- 1. PROSES SELECT2 (Jenis Dokumen) ---
         await page.waitForSelector('select[name="jenis_dokumen_id"]', { timeout: 5000 });
@@ -38,9 +38,9 @@ module.exports = async function uploadDocument(page, item) {
         if (isUrl) {
             // File dari Telegram — fetch ke buffer lalu upload
             console.log(`✓ Fetch file dari URL Telegram...`);
-            const https = require('https');
-            const os = require('os');
-            const tmpPath = require('path').join(os.tmpdir(), `tte_${Date.now()}.pdf`);
+            const https    = require('https');
+            const os       = require('os');
+            const tmpPath  = require('path').join(os.tmpdir(), `tte_${Date.now()}.pdf`);
 
             await new Promise((resolve, reject) => {
                 const file = require('fs').createWriteStream(tmpPath);
@@ -69,7 +69,7 @@ module.exports = async function uploadDocument(page, item) {
         await page.waitForTimeout(2000);
 
         await Promise.all([
-            page.waitForNavigation({ waitUntil: 'networkidle' }),
+            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
             page.click('button[type="submit"]')
         ]);
 

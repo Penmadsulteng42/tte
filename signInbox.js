@@ -21,7 +21,7 @@ module.exports = async function signInbox(page, queueItems) {
 
     await page.waitForSelector('table tbody tr', { timeout: 10000 });
 
-    const rows = page.locator('table tbody tr');
+    const rows  = page.locator('table tbody tr');
     const count = await rows.count();
     console.log(`📄 Total baris di inbox: ${count}`);
 
@@ -29,10 +29,10 @@ module.exports = async function signInbox(page, queueItems) {
 
     // Centang dokumen yang cocok dengan queue
     for (let i = 0; i < count; i++) {
-        const row = rows.nth(i);
+        const row      = rows.nth(i);
         const waktuWeb = (await row.locator('td').nth(2).innerText()).trim();
-        const namaWeb = (await row.locator('td').nth(3).innerText()).trim();
-        const tahun = Number(waktuWeb.match(/20\d{2}/)?.[0] || 0);
+        const namaWeb  = (await row.locator('td').nth(3).innerText()).trim();
+        const tahun    = Number(waktuWeb.match(/20\d{2}/)?.[0] || 0);
 
         const match = queueItems.find(d =>
             namaWeb.toLowerCase().includes(d.nama.toLowerCase()) && tahun > 2025
@@ -75,7 +75,7 @@ module.exports = async function signInbox(page, queueItems) {
 
     try {
         // Tunggu networkidle — semua request API selesai
-        await page.waitForLoadState('networkidle', { timeout: 60000 });
+        await page.waitForLoadState('load', { timeout: 60000 });
 
         // Tunggu notifikasi sukses muncul (toast/alert)
         // Coba beberapa kemungkinan selector notifikasi sukses
@@ -95,7 +95,7 @@ module.exports = async function signInbox(page, queueItems) {
                 console.log(`   ✓ Notifikasi sukses terdeteksi: ${sel}`);
                 successFound = true;
                 break;
-            } catch (_) { }
+            } catch (_) {}
         }
 
         if (!successFound) {
@@ -105,7 +105,7 @@ module.exports = async function signInbox(page, queueItems) {
         }
 
         // Tunggu halaman stabil setelah notifikasi
-        await page.waitForLoadState('networkidle', { timeout: 30000 });
+        await page.waitForLoadState('load', { timeout: 60000 });
 
         // Verifikasi: dokumen yang ditandatangani seharusnya hilang dari inbox
         await page.waitForTimeout(2000);
