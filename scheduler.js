@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
 
+
+
 const { readRows, updateStatus } = require('./sheets');
 const { notifyDone, notifyError } = require('./notify');
 
@@ -169,6 +171,6 @@ console.log('   Ketik Ctrl+C untuk menghentikan\n');
 runRPA();
 
 // Jadwalkan berikutnya
-cron.schedule('*/1 * * * *', () => {
+cron.schedule('*/5 * * * *', () => {
     runRPA();
 });

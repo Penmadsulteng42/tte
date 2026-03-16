@@ -7,4 +7,4 @@ RUN npm ci
 
 COPY . .
 
-CMD ["node", "scheduler.js"]
+CMD ["node", "app.js"]
