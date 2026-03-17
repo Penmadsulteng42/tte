@@ -65,8 +65,17 @@ async function runRPA() {
         if (toUpload.length > 0) {
             console.log(`\n========== UPLOAD (${toUpload.length} dokumen) ==========`);
 
-            const adminCtx = await browser.newContext({ viewport: null });
+            const adminCtx = await browser.newContext({
+                viewport: null,
+                ignoreHTTPSErrors: true // Abaikan masalah sertifikat SSL
+            });
             const adminPage = await adminCtx.newPage();
+
+            // Gunakan 'domcontentloaded' agar tidak menunggu gambar/aset berat dimuat semua
+            await adminPage.goto('https://tte.kemenag.go.id/login', {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+            });
             adminPage.setDefaultTimeout(60000);
             await loginAdmin(adminPage);
 
