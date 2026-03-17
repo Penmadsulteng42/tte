@@ -10,7 +10,7 @@ async function cariDiTabel(page, namaCari) {
     let currentPage = 1;
 
     while (true) {
-        await page.waitForSelector('table tbody tr', { timeout: 10000 });
+        await page.waitForSelector('table tbody tr', { timeout: 120000 });
 
         const rows  = page.locator('table tbody tr');
         const count = await rows.count();
@@ -77,7 +77,7 @@ async function cariDiTabel(page, namaCari) {
  * - Jika tidak ada chatId → simpan ke disk
  */
 module.exports = async function downloadFinal(page, queueItems, downloadDir) {
-    await page.goto(url.download, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(url.download, { waitUntil: 'load', timeout: 120000 });
     await page.waitForSelector('table tbody tr');
 
     console.log(`\n📋 Total queue SIGNED: ${queueItems.length} dokumen`);
@@ -89,7 +89,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
         console.log(`\n[${q + 1}/${queueItems.length}] Mencari: ${item.nama}`);
 
         // Kembali ke halaman 1 untuk setiap dokumen
-        await page.goto(url.download, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(url.download, { waitUntil: 'load', timeout: 120000 });
         await page.waitForSelector('table tbody tr');
 
         const found = await cariDiTabel(page, item.nama);
@@ -102,11 +102,11 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
         try {
             // Klik tombol FINAL → tunggu popup muncul
             const [popup] = await Promise.all([
-                page.waitForEvent('popup', { timeout: 15000 }),
+                page.waitForEvent('popup', { timeout: 120000 }),
                 found.finalBtn.first().click()
             ]);
 
-            await popup.waitForLoadState('load', { timeout: 60000 });
+            await popup.waitForLoadState('load', { timeout: 120000 });
 
             // Ambil URL PDF dari popup — ini URL dokumen yang sudah ditandatangani
             const pdfUrl = popup.url();
@@ -118,7 +118,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
             console.log(`   🔗 PDF URL: ${pdfUrl}`);
 
             // Fetch PDF ke buffer memory menggunakan context request
-            const response = await page.context().request.get(pdfUrl, { timeout: 30000 });
+            const response = await page.context().request.get(pdfUrl, { timeout: 120000 });
 
             if (!response.ok()) {
                 await popup.close();

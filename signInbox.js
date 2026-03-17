@@ -19,7 +19,7 @@ module.exports = async function signInbox(page, queueItems) {
     await page.waitForTimeout(1500);
     console.log('✓ Records per page diset ke 100');
 
-    await page.waitForSelector('table tbody tr', { timeout: 10000 });
+    await page.waitForSelector('table tbody tr', { timeout: 120000 });
 
     const rows  = page.locator('table tbody tr');
     const count = await rows.count();
@@ -75,7 +75,7 @@ module.exports = async function signInbox(page, queueItems) {
 
     try {
         // Tunggu networkidle — semua request API selesai
-        await page.waitForLoadState('load', { timeout: 60000 });
+        await page.waitForLoadState('load', { timeout: 120000 });
 
         // Tunggu notifikasi sukses muncul (toast/alert)
         // Coba beberapa kemungkinan selector notifikasi sukses
@@ -105,7 +105,7 @@ module.exports = async function signInbox(page, queueItems) {
         }
 
         // Tunggu halaman stabil setelah notifikasi
-        await page.waitForLoadState('load', { timeout: 60000 });
+        await page.waitForLoadState('load', { timeout: 120000 });
 
         // Verifikasi: dokumen yang ditandatangani seharusnya hilang dari inbox
         await page.waitForTimeout(2000);

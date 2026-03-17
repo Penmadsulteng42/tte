@@ -5,7 +5,7 @@ const config = require('./config.js');
 module.exports = async function uploadDocument(page, item) {
     try {
         console.log(`🚀 Menuju halaman unggah untuk: ${item.nama}`);
-        await page.goto('https://tte.kemenag.go.id/satker/dokumen/naskah/create', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto('https://tte.kemenag.go.id/satker/dokumen/naskah/create', { waitUntil: 'load', timeout: 120000 });
 
         // --- 1. PROSES SELECT2 (Jenis Dokumen) ---
         await page.waitForSelector('select[name="jenis_dokumen_id"]', { timeout: 5000 });
@@ -69,7 +69,7 @@ module.exports = async function uploadDocument(page, item) {
         await page.waitForTimeout(2000);
 
         await Promise.all([
-            page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }),
+            page.waitForNavigation({ waitUntil: 'load', timeout: 120000 }),
             page.click('button[type="submit"]')
         ]);
 
@@ -182,7 +182,7 @@ module.exports = async function uploadDocument(page, item) {
         // Pastikan select anchor ADA
         await page.waitForSelector('select[name="anchor[]"]', {
             state: 'attached',
-            timeout: 10000
+            timeout: 120000
         });
 
         // Buka dropdown bootstrap-select
