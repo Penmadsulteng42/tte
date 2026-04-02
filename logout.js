@@ -2,57 +2,57 @@ module.exports = async function logout(page) {
     console.log('🔓 Logout...');
 
     try {
-        // Klik dropdown user/avatar di pojok kanan atas
-        const dropdownSelectors = [
-            'a[href*="logout"]',
-            'button[href*="logout"]',
-            '.dropdown-toggle',
-            'a.nav-link.dropdown-toggle',
-            '#navbarDropdown',
-        ];
+        // Cek dulu apakah page masih bisa diakses
+        await page.evaluate(() => true);
+    } catch {
+        console.warn('⚠️ Halaman sudah tertutup, skip logout.');
+        return;
+    }
 
-        // Coba cari link logout langsung
-        let logoutLink = null;
-        for (const sel of dropdownSelectors) {
-            const el = page.locator(sel).first();
-            if (await el.count() > 0) {
-                // Jika ini dropdown, klik dulu untuk expand
-                const href = await el.getAttribute('href').catch(() => '');
-                if (href && href.includes('logout')) {
-                    logoutLink = el;
-                    break;
-                }
-                // Klik dropdown untuk tampilkan menu
-                await el.click();
-                await page.waitForTimeout(500);
-                break;
-            }
+    try {
+        // Strategi 1: submit form#logout-form langsung via JS (paling cepat)
+        const formAda = await page.evaluate(() => {
+            const form = document.getElementById('logout-form');
+            if (form) { form.submit(); return true; }
+            return false;
+        });
+
+        if (formAda) {
+            await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
+            console.log('✅ Logout berhasil');
+            return;
         }
 
-        // Setelah dropdown terbuka, cari link logout di menu
-        if (!logoutLink) {
-            const menuLogout = page.locator([
-                'a[href*="logout"]',
-                'a:has-text("Logout")',
-                'a:has-text("Keluar")',
-                'a:has-text("Sign Out")',
-            ].join(', ')).first();
-
-            if (await menuLogout.count() > 0) {
-                logoutLink = menuLogout;
-            }
+        // Strategi 2: buka dropdown #userbox dulu, baru submit via JS
+        const dropdown = page.locator('#userbox a[data-toggle="dropdown"]').first();
+        if (await dropdown.count() > 0) {
+            await dropdown.click();
+            await page.waitForTimeout(500);
         }
 
-        if (logoutLink) {
-            await logoutLink.click();
-            await page.waitForLoadState('load', { timeout: 120000 });
+        // Klik via JS agar tidak perlu elemen visible
+        const clicked = await page.evaluate(() => {
+            const form = document.getElementById('logout-form');
+            if (form) { form.submit(); return true; }
+
+            const link = document.querySelector('a[href*="logout"]');
+            if (link) { link.click(); return true; }
+
+            return false;
+        });
+
+        if (clicked) {
+            await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
             console.log('✅ Logout berhasil');
         } else {
-            // Fallback: tutup browser context saja
-            console.log('⚠️ Tombol logout tidak ditemukan, menutup sesi...');
+            console.warn('⚠️ Tombol logout tidak ditemukan, menutup sesi...');
         }
 
     } catch (err) {
-        console.warn('⚠️ Logout gagal:', err.message);
+        if (err.message.includes('closed') || err.message.includes('Target page')) {
+            console.warn('⚠️ Sesi sudah tertutup saat logout, diabaikan.');
+        } else {
+            console.warn('⚠️ Logout gagal:', err.message);
+        }
     }
 };

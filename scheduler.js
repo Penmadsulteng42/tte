@@ -35,7 +35,7 @@ async function runRPA() {
     console.log('='.repeat(50));
 
     const browser = await chromium.launch({
-        headless: true,
+        headless: false,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
