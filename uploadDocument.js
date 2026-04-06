@@ -157,15 +157,32 @@ module.exports = async function uploadDocument(page, item) {
         // --- 6. LANJUT KE STEP PENANDATANGAN ---
         console.log('\n➡️ Lanjut ke penandatangan...');
 
-        // Klik tombol Lanjut — coba selector teks dulu, fallback ke xpath
-        const tombolLanjut = page.locator('a:has-text("Lanjut"), a:has-text("Next"), a:has-text("Selanjutnya")');
-        if (await tombolLanjut.count() > 0) {
-            await tombolLanjut.first().click();
+        // Gunakan href spesifik create_step_three — tidak akan bentrok dengan pagination
+        const lanjutDiklik = await page.evaluate(() => {
+            // Prioritas 1: cari berdasarkan href langsung ke step_three
+            const byHref = document.querySelector('a[href*="create_step_three"]');
+            if (byHref) { byHref.click(); return 'href'; }
+
+            // Prioritas 2: cari <a> berteks Lanjut yang bukan pagination DataTable
+            const byText = Array.from(document.querySelectorAll('a')).find(a => {
+                const text = a.textContent.trim().toLowerCase();
+                const isLanjut = text === 'lanjut' || text === 'selanjutnya';
+                const bukanPagination = !a.closest('.paginate_button') && !a.hasAttribute('data-dt-idx');
+                return isLanjut && bukanPagination;
+            });
+            if (byText) { byText.click(); return 'text'; }
+
+            return null;
+        });
+
+        if (lanjutDiklik) {
+            console.log(`✓ Tombol Lanjut diklik (via ${lanjutDiklik})`);
         } else {
+            console.log('⚠️ Tombol Lanjut tidak ditemukan via JS, coba xpath...');
             await page.click('xpath=/html/body/section/div/section/div[2]/div/section/div[2]/a[2]');
+            console.log('✓ Tombol Lanjut diklik (via xpath)');
         }
 
-        console.log('✓ Tombol Lanjut diklik');
         await page.waitForTimeout(2000);
 
         // Tunggu form penandatangan muncul

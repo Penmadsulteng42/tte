@@ -3,14 +3,14 @@ const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
 
-
-
 const { readRows, updateStatus } = require('./sheets');
 const { notifyDone, notifyError } = require('./notify');
 
 const loginAdmin = require('./loginAdmin');
 const uploadDocument = require('./uploadDocument');
 const logout = require('./logout');
+const loginKabid = require('./loginKabid');
+const signParaf = require('./signParaf');
 const loginSigner = require('./loginSigner');
 const signInbox = require('./signInbox');
 const downloadFinal = require('./downloadFinal');
@@ -18,11 +18,16 @@ const downloadFinal = require('./downloadFinal');
 const downloadDir = path.join(__dirname, 'downloads');
 if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir);
 
-let isRunning = false; // Cegah RPA jalan bersamaan
+let isRunning = false;
 
-// ============================================================
-//  FUNGSI UTAMA RPA
-// ============================================================
+// Helper: cek apakah dokumen butuh paraf kabid
+function butuhParafKabid(item) {
+    const pemarafList = item.pemaraf
+        ? item.pemaraf.split(',').map(p => p.trim().toLowerCase())
+        : [];
+    return pemarafList.includes('kabid');
+}
+
 async function runRPA() {
     if (isRunning) {
         console.log('⏳ RPA masih berjalan, skip giliran ini...');
@@ -35,48 +40,45 @@ async function runRPA() {
     console.log('='.repeat(50));
 
     const browser = await chromium.launch({
-        headless: false,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu'
-        ]
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
 
     try {
         const queue = await readRows();
+        const isValid = i => i.linkFileLocal && i.penandatangan1 && i.nama;
 
-        const toUpload = queue.filter(i => !i.status && i.tahun > 2025);
-        const toSign = queue.filter(i => i.status === 'UPLOADED' && i.tahun > 2025);
+        const toUpload = queue.filter(i => i.status === 'READY' && i.tahun > 2025 && isValid(i));
+
+        const invalidRows = queue.filter(i => i.status === 'READY' && i.tahun > 2025 && !isValid(i));
+        if (invalidRows.length > 0) {
+            console.warn(`⚠️ ${invalidRows.length} baris READY dilewati (data tidak lengkap):`);
+            invalidRows.forEach(i => console.warn(`   - Baris ${i.row}: ${i.nama || '(tanpa nama)'}`));
+        }
+
+        const toParaf = queue.filter(i =>
+            i.status === 'UPLOADED' && i.tahun > 2025 && butuhParafKabid(i)
+        );
+        const toSign = queue.filter(i =>
+            (i.status === 'PARAFED' || (i.status === 'UPLOADED' && !butuhParafKabid(i))) &&
+            i.tahun > 2025
+        );
         const toDownload = queue.filter(i => i.status === 'SIGNED' && i.tahun > 2025);
 
-        // Jika tidak ada yang perlu diproses, skip
-        if (toUpload.length === 0 && toSign.length === 0 && toDownload.length === 0) {
+        if (toUpload.length === 0 && toParaf.length === 0 && toSign.length === 0 && toDownload.length === 0) {
             console.log('ℹ️ Tidak ada dokumen yang perlu diproses');
             await browser.close();
             isRunning = false;
             return;
         }
 
-        /* ==========================================
-           ADMIN FLOW: UPLOAD
-        ========================================== */
+        /* ========== ADMIN: UPLOAD ========== */
         if (toUpload.length > 0) {
             console.log(`\n========== UPLOAD (${toUpload.length} dokumen) ==========`);
-
-            const adminCtx = await browser.newContext({
-                viewport: null,
-                ignoreHTTPSErrors: true // Abaikan masalah sertifikat SSL
-            });
+            const adminCtx = await browser.newContext({ viewport: null, ignoreHTTPSErrors: true });
             const adminPage = await adminCtx.newPage();
-
-            // Gunakan 'domcontentloaded' agar tidak menunggu gambar/aset berat dimuat semua
-            await adminPage.goto('https://tte.kemenag.go.id/login', {
-                waitUntil: 'domcontentloaded',
-                timeout: 60000
-            });
             adminPage.setDefaultTimeout(60000);
+            await adminPage.goto('https://tte.kemenag.go.id/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
             await loginAdmin(adminPage);
 
             for (const item of toUpload) {
@@ -89,28 +91,50 @@ async function runRPA() {
                     await notifyError(item.chatId, item.nama, 'Gagal pada proses upload dokumen.');
                 }
             }
-
             await logout(adminPage);
             await adminCtx.close();
         }
 
-        /* ==========================================
-           SIGNER FLOW: TTE
-        ========================================== */
-        // Baca ulang setelah upload
+        /* ========== KABID: PARAF ELEKTRONIK ========== */
         const queueAfterUpload = await readRows();
-        const toSignFinal = queueAfterUpload.filter(i => i.status === 'UPLOADED' && i.tahun > 2025);
+        const toParafFinal = queueAfterUpload.filter(i =>
+            i.status === 'UPLOADED' && i.tahun > 2025 && butuhParafKabid(i)
+        );
+
+        if (toParafFinal.length > 0) {
+            console.log(`\n========== PARAF KABID (${toParafFinal.length} dokumen) ==========`);
+            const kabidCtx = await browser.newContext({ viewport: null });
+            const kabidPage = await kabidCtx.newPage();
+            kabidPage.setDefaultTimeout(60000);
+            await loginKabid(kabidPage);
+
+            const parafedItems = await signParaf(kabidPage, toParafFinal);
+            for (const item of parafedItems) {
+                await updateStatus(item.row, 'PARAFED');
+                console.log(`✅ ${item.nama} → PARAFED`);
+            }
+
+            await logout(kabidPage);
+            await kabidCtx.close();
+            console.log('\n⏳ Menunggu server memproses paraf (5 detik)...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+
+        /* ========== SIGNER: TTE (PARAFED + UPLOADED tanpa kabid) ========== */
+        const queueAfterParaf = await readRows();
+        const toSignFinal = queueAfterParaf.filter(i =>
+            (i.status === 'PARAFED' || (i.status === 'UPLOADED' && !butuhParafKabid(i))) &&
+            i.tahun > 2025
+        );
 
         if (toSignFinal.length > 0) {
             console.log(`\n========== TANDA TANGAN (${toSignFinal.length} dokumen) ==========`);
-
             const signerCtx = await browser.newContext({ viewport: null });
             const signerPage = await signerCtx.newPage();
             signerPage.setDefaultTimeout(60000);
             await loginSigner(signerPage);
 
             const signedItems = await signInbox(signerPage, toSignFinal);
-
             for (const item of signedItems) {
                 await updateStatus(item.row, 'SIGNED');
                 console.log(`✅ ${item.nama} → SIGNED`);
@@ -118,32 +142,24 @@ async function runRPA() {
 
             await logout(signerPage);
             await signerCtx.close();
-
-            // Jeda setelah TTE selesai
             console.log('\n⏳ Menunggu server memproses TTE (10 detik)...');
             await new Promise(resolve => setTimeout(resolve, 10000));
         }
 
-        /* ==========================================
-           ADMIN FLOW: DOWNLOAD
-        ========================================== */
-        // Baca ulang setelah sign
+        /* ========== ADMIN: DOWNLOAD ========== */
         const queueAfterSign = await readRows();
         const toDownloadFinal = queueAfterSign.filter(i => i.status === 'SIGNED' && i.tahun > 2025);
 
         if (toDownloadFinal.length > 0) {
             console.log(`\n========== DOWNLOAD (${toDownloadFinal.length} dokumen) ==========`);
-
             const dlCtx = await browser.newContext({ viewport: null });
             const dlPage = await dlCtx.newPage();
             dlPage.setDefaultTimeout(60000);
             await loginAdmin(dlPage);
 
             const downloadedItems = await downloadFinal(dlPage, toDownloadFinal, downloadDir);
-
             for (const item of downloadedItems) {
                 if (item.chatId) {
-                    // Ada chatId → kirim PDF dari buffer langsung ke Telegram
                     const terkirim = await notifyDone(item.chatId, item.nama, item.buffer, item.filename);
                     if (terkirim) {
                         await updateStatus(item.row, 'SENT');
@@ -153,12 +169,10 @@ async function runRPA() {
                         console.log(`⚠️ ${item.nama} → DOWNLOADED (gagal kirim Telegram)`);
                     }
                 } else {
-                    // Tidak ada chatId → sudah disimpan ke disk di downloadFinal
                     await updateStatus(item.row, 'DOWNLOADED');
                     console.log(`✅ ${item.nama} → DOWNLOADED (disimpan ke disk)`);
                 }
             }
-
             await dlCtx.close();
         }
 
@@ -171,18 +185,8 @@ async function runRPA() {
     }
 }
 
-// ============================================================
-//  JADWAL: Jalankan RPA setiap 5 menit
-//  Format cron: '*/5 * * * *' = setiap 5 menit
-//  Ganti angka 5 sesuai kebutuhan
-// ============================================================
-console.log('⏰ Scheduler aktif — RPA akan jalan setiap 5 menit');
+console.log('⏰ Scheduler aktif — RPA akan jalan setiap 1 menit');
 console.log('   Ketik Ctrl+C untuk menghentikan\n');
 
-// Jalankan sekali saat pertama start
 runRPA();
-
-// Jadwalkan berikutnya
-cron.schedule('*/5 * * * *', () => {
-    runRPA();
-});
+cron.schedule('*/1 * * * *', () => { runRPA(); });

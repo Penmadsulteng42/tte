@@ -14,11 +14,18 @@ module.exports = {
         password: process.env.ADMIN_PASSWORD,
     },
 
-    // ✍️ AKUN PENANDATANGAN
+    // ✍️ AKUN PENANDATANGAN (kakanwil / pejabat TTD)
     signer: {
         nip: process.env.SIGNER_NIP,
         password: process.env.SIGNER_PASSWORD,
         passphrase: process.env.SIGNER_PASSPHRASE
+    },
+
+    // 📝 AKUN KABID (untuk pemarafan elektronik)
+    kabid: {
+        nip: process.env.KABID_NIP,
+        password: process.env.KABID_PASSWORD,
+        passphrase: process.env.KABID_PASSPHRASE
     },
 
     // 🏛️ DAFTAR PEJABAT

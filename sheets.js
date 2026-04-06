@@ -1,11 +1,8 @@
 const { google } = require('googleapis');
 const { v4: uuidv4 } = require('uuid');
 
-// Load .env jika ada (lokal), tidak akan menimpa variable yang sudah ada (Railway)
 require('dotenv').config();
 
-// Baca credentials dari environment variable (Railway)
-// atau dari file lokal (komputer lokal)
 let auth;
 console.log('GOOGLE_CREDENTIALS:', process.env.GOOGLE_CREDENTIALS ? 'ADA' : 'TIDAK ADA');
 if (process.env.GOOGLE_CREDENTIALS) {
@@ -34,9 +31,9 @@ const SHEET_NAME = 'QUEUE_NEW';
  * H  → Penandatangan 3      I  → Anchor 3
  * J  → Penandatangan 4      K  → Anchor 4
  * L  → Tahun
- * M  → Link File Lokal
- * N  → Status
- * O  → Chat ID Telegram (untuk notifikasi balik)
+ * M  → Link File
+ * N  → Status (READY → UPLOADED → SIGNED → SENT/DOWNLOADED)
+ * O  → Chat ID Telegram
  */
 
 async function readRows() {
@@ -67,7 +64,7 @@ async function readRows() {
             tahun: Number(row[11] || 0),
             linkFileLocal: row[12] || '',
             status: row[13] || '',
-            chatId: row[14] || ''   // O — Chat ID Telegram
+            chatId: row[14] || ''
         }));
 
     } catch (err) {
@@ -77,6 +74,23 @@ async function readRows() {
 }
 
 async function appendRow(item) {
+    // ── Validasi field wajib sebelum simpan ke sheets ──
+    const errors = [];
+    if (!item.namaDokumen || !item.namaDokumen.trim())
+        errors.push('namaDokumen kosong');
+    if (!item.penandatangan1 || !item.penandatangan1.trim())
+        errors.push('penandatangan1 kosong');
+    if (!item.linkFileLocal || !item.linkFileLocal.trim())
+        errors.push('linkFileLocal kosong');
+    if (!item.anchor1 || !item.anchor1.trim())
+        errors.push('anchor1 kosong');
+
+    if (errors.length > 0) {
+        const msg = `Data tidak lengkap, ditolak: ${errors.join(', ')}`;
+        console.error(`❌ ${msg}`);
+        throw new Error(msg);
+    }
+
     try {
         const authClient = await auth.getClient();
         const sheets = google.sheets({ version: 'v4', auth: authClient });
@@ -100,13 +114,13 @@ async function appendRow(item) {
                     item.anchor4,         // K
                     item.tahun,           // L
                     item.linkFileLocal,   // M
-                    '',                   // N — Status kosong
-                    item.chatId           // O — Chat ID Telegram
+                    'READY',              // N — READY = data lengkap, siap diproses
+                    item.chatId           // O
                 ]]
             }
         });
 
-        console.log(`📝 Dokumen '${item.namaDokumen}' ditambahkan ke QUEUE_NEW`);
+        console.log(`📝 Dokumen '${item.namaDokumen}' ditambahkan ke QUEUE_NEW dengan status READY`);
 
     } catch (err) {
         console.error('❌ Gagal append ke Spreadsheet:', err.message);
