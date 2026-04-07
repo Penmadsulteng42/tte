@@ -1,9 +1,25 @@
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
-const { url }                  = require('./config');
-const { docKey, safeFilename } = require('./utils');
+const { url } = require('./config');
+const { docKey, sanitize } = require('./utils');
 
 /** Status di aplikasi TTE masih tahap dokumen belum final (multi penandatangan) */
+
+function formatDownloadDate(waktu) {
+    const parts = String(waktu).trim().match(/(\d{2})-(\d{2})-(\d{4})/);
+    if (parts) {
+        const dd = parts[1];
+        const mm = parts[2];
+        const yy = parts[3].slice(2);
+        return `${yy}${mm}${dd}`;
+    }
+
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yy = String(now.getFullYear()).slice(2);
+    return `${yy}${mm}${dd}`;
+}
 function statusTTEMasihDraf(statusTd) {
     const s = (statusTd || '').toLowerCase();
     return s.includes('draf') || s.includes('draft');
@@ -18,14 +34,14 @@ async function cariDiTabel(page, namaCari) {
     while (true) {
         await page.waitForSelector('table tbody tr', { timeout: 120000 });
 
-        const rows  = page.locator('table tbody tr');
+        const rows = page.locator('table tbody tr');
         const count = await rows.count();
         console.log(`   🔍 Halaman ${currentPage}: ${count} baris`);
 
         for (let i = 0; i < count; i++) {
-            const row   = rows.nth(i);
+            const row = rows.nth(i);
             const waktu = (await row.locator('td').nth(1).innerText()).trim();
-            const nama  = (await row.locator('td').nth(2).innerText()).trim();
+            const nama = (await row.locator('td').nth(2).innerText()).trim();
 
             const cocok =
                 nama.toLowerCase().includes(namaCari.toLowerCase()) ||
@@ -35,8 +51,8 @@ async function cariDiTabel(page, namaCari) {
 
             // Kolom status di admin — harus "Sukses" + tombol FINAL (semua penandatangan selesai).
             // Jika sheet kolom N=SIGNED tapi di sini masih Draf → jangan unduh; lanjut dokumen lain & batch upload/TTE.
-            const statusTd  = (await row.locator('td').nth(4).innerText()).trim();
-            const isSukses  = statusTd.toLowerCase().includes('sukses');
+            const statusTd = (await row.locator('td').nth(4).innerText()).trim();
+            const isSukses = statusTd.toLowerCase().includes('sukses');
 
             if (!isSukses) {
                 // Satu dokumen = satu baris yang cocok; jika belum Sukses, jangan lanjut ke halaman lain
@@ -133,14 +149,10 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
 
             // Format nama file: nama_dokumen_tanggal+nomorurut
             // tanggal: YYYYMMDD (hari proses), nomor urut: 2 digit per sesi download
-            const baseName = (item.nama || found.nama || 'dokumen').replace(/\s+/g, '_');
-            const now      = new Date();
-            const y        = now.getFullYear();
-            const m        = String(now.getMonth() + 1).padStart(2, '0');
-            const d        = String(now.getDate()).padStart(2, '0');
-            const tglPart  = `${y}${m}${d}`;
+            const baseName = sanitize((item.nama || found.nama || 'dokumen').replace(/\s+/g, '_'));
+            const datePart = formatDownloadDate(found.waktu);
             const urutPart = String(q + 1).padStart(2, '0');
-            const filename = safeFilename(found.waktu, `${baseName}_${tglPart}${urutPart}`);
+            const filename = `${baseName}_${datePart}_${urutPart}.pdf`;
 
             const tempPath = await download.path();
             if (!tempPath) {
@@ -158,11 +170,11 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
             await page.waitForTimeout(2000);
 
             processedItems.push({
-                row:      item.row,
-                key:      docKey(found.waktu, found.nama),
+                row: item.row,
+                key: docKey(found.waktu, found.nama),
                 filename,
-                nama:     item.nama,
-                chatId:   item.chatId,
+                nama: item.nama,
+                chatId: item.chatId,
                 buffer,           // PDF di memory — langsung kirim ke Telegram
                 filepath: null    // diisi jika perlu simpan ke disk
             });
@@ -176,7 +188,7 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
                 for (const p of allPages) {
                     if (p !== page) await p.close();
                 }
-            } catch (_) {}
+            } catch (_) { }
 
             await page.waitForTimeout(2000);
         }
@@ -189,10 +201,10 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
                 let filepath = path.join(downloadDir, item.filename);
 
                 if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
-                    const ts   = Date.now();
-                    const ext  = path.extname(item.filename);
+                    const ts = Date.now();
+                    const ext = path.extname(item.filename);
                     const base = path.basename(item.filename, ext);
-                    filepath   = path.join(downloadDir, `${base}_${ts}${ext}`);
+                    filepath = path.join(downloadDir, `${base}_${ts}${ext}`);
                 }
 
                 fs.writeFileSync(filepath, item.buffer);
