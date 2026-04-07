@@ -9,12 +9,12 @@ if (process.env.GOOGLE_CREDENTIALS) {
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
     auth = new google.auth.GoogleAuth({
         credentials,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly']
     });
 } else {
     auth = new google.auth.GoogleAuth({
         keyFile: 'service-account.json',
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+        scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly']
     });
 }
 
@@ -147,4 +147,21 @@ async function updateStatus(rowNumber, status) {
     }
 }
 
-module.exports = { readRows, appendRow, updateStatus };
+async function getLastModifiedTime() {
+    try {
+        const authClient = await auth.getClient();
+        const drive = google.drive({ version: 'v3', auth: authClient });
+
+        const res = await drive.files.get({
+            fileId: SPREADSHEET_ID,
+            fields: 'modifiedTime'
+        });
+
+        return new Date(res.data.modifiedTime).getTime();
+    } catch (err) {
+        console.error('❌ Gagal mendapatkan modifiedTime:', err.message);
+        return null;
+    }
+}
+
+module.exports = { readRows, appendRow, updateStatus, getLastModifiedTime };

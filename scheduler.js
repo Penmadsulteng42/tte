@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
 
-const { readRows, updateStatus } = require('./sheets');
+const { readRows, updateStatus, getLastModifiedTime } = require('./sheets');
 const { notifyDone, notifyError } = require('./notify');
 
 const loginAdmin = require('./loginAdmin');
@@ -83,7 +83,33 @@ function logScanSpreadsheet(queue, pass) {
     console.log(`${'·'.repeat(52)}`);
 }
 
+const LAST_MODIFIED_FILE = path.join(__dirname, 'last_modified.json');
+
 async function runRPA() {
+    // Cek apakah ada perubahan di spreadsheet
+    const currentModified = await getLastModifiedTime();
+    if (!currentModified) {
+        console.log('⚠️ Gagal cek modifiedTime, skip giliran ini...');
+        return;
+    }
+
+    let lastModified = 0;
+    if (fs.existsSync(LAST_MODIFIED_FILE)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(LAST_MODIFIED_FILE, 'utf8'));
+            lastModified = data.modifiedTime || 0;
+        } catch (err) {
+            console.warn('⚠️ Gagal baca last_modified.json:', err.message);
+        }
+    }
+
+    if (currentModified <= lastModified) {
+        console.log('📄 Tidak ada perubahan di spreadsheet sejak terakhir, sistem diam...');
+        return;
+    }
+
+    console.log('📄 Deteksi perubahan di spreadsheet, mulai proses...');
+
     if (isRunning) {
         console.log('⏳ RPA masih berjalan, skip giliran ini...');
         return;
@@ -93,6 +119,14 @@ async function runRPA() {
     console.log(`\n${'='.repeat(50)}`);
     console.log(`🤖 RPA dimulai: ${new Date().toLocaleString('id-ID')}`);
     console.log('='.repeat(50));
+
+    // Update lastModified setelah mulai proses
+    try {
+        fs.writeFileSync(LAST_MODIFIED_FILE, JSON.stringify({ modifiedTime: currentModified }));
+        console.log('📝 Last modified time updated');
+    } catch (err) {
+        console.warn('⚠️ Gagal simpan last_modified.json:', err.message);
+    }
 
     const browser = await chromium.launch({
         headless: true,
@@ -274,7 +308,7 @@ async function runRPA() {
     }
 }
 
-console.log('⏰ Scheduler aktif — RPA akan jalan setiap 5 menit');
+console.log('⏰ Scheduler aktif — RPA akan berjalan hanya jika ada perubahan di Google Sheets');
 console.log('   Ketik Ctrl+C untuk menghentikan\n');
 
 runRPA();

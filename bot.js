@@ -159,6 +159,7 @@ function labelStatus(status) {
         case 'SIGNED': return '✍️  Sedang diproses';
         case 'DOWNLOADED': return '✅ Selesai (tersimpan di server)';
         case 'SENT': return '✅ Selesai (terkirim ke Telegram)';
+        case 'FAILED': return '❌ Gagal (periksa data)';
         default: return '⏳ Pending (menunggu diproses)';
     }
 }
