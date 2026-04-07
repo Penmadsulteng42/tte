@@ -96,7 +96,8 @@ function keyboardPemaraf(selected = []) {
             selected.includes(p) ? `✅ ${p.charAt(0).toUpperCase() + p.slice(1)}` : p.charAt(0).toUpperCase() + p.slice(1),
             `pemaraf_${p}`
         )),
-        [Markup.button.callback('✔️ Selesai Pilih Pemaraf', 'pemaraf_done')]
+        [Markup.button.callback('✔️ Selesai Pilih Pemaraf', 'pemaraf_done')],
+        [Markup.button.callback('❌ Tidak Diparaf', 'pemaraf_none')]
     ]);
 }
 
@@ -154,11 +155,11 @@ function formatRingkasan(s) {
 // ============================================================
 function labelStatus(status) {
     switch (status) {
-        case 'UPLOADED':    return '📤 Menunggu ditandatangani';
-        case 'SIGNED':      return '✍️  Sedang diproses';
-        case 'DOWNLOADED':  return '✅ Selesai (tersimpan di server)';
-        case 'SENT':        return '✅ Selesai (terkirim ke Telegram)';
-        default:            return '⏳ Pending (menunggu diproses)';
+        case 'UPLOADED': return '📤 Menunggu ditandatangani';
+        case 'SIGNED': return '✍️  Sedang diproses';
+        case 'DOWNLOADED': return '✅ Selesai (tersimpan di server)';
+        case 'SENT': return '✅ Selesai (terkirim ke Telegram)';
+        default: return '⏳ Pending (menunggu diproses)';
     }
 }
 
@@ -378,6 +379,16 @@ bot.on('callback_query', async (ctx) => {
                 keyboardPenandatangan(sudahDipilih(s))
             );
 
+        } else if (data === 'pemaraf_none') {
+            // Tidak diparaf → set pemaraf kosong dan lanjut ke penandatangan
+            s.pemaraf = [];
+            s.step = 'penandatangan';
+            ctx.reply(
+                `${formatProgress(s)}\n\n` +
+                `Pilih Penandatangan 1:`,
+                keyboardPenandatangan(sudahDipilih(s))
+            );
+
         } else if (data.startsWith('pemaraf_')) {
             const key = data.replace('pemaraf_', '');
             // Toggle: kalau sudah ada, lepas; kalau belum, tambah
@@ -471,10 +482,27 @@ bot.on('callback_query', async (ctx) => {
 });
 
 // ============================================================
-//  Jalankan bot
+//  Jalankan bot dengan auto-restart jika 409 conflict
 // ============================================================
-bot.launch();
-console.log('🤖 TTE Bot aktif dan siap menerima pesan...');
+async function launchBot(retryCount = 0) {
+    try {
+        await bot.launch();
+        console.log('🤖 TTE Bot aktif dan siap menerima pesan...');
+    } catch (err) {
+        if (err.message && err.message.includes('409')) {
+            const delay = Math.min(5000 * (retryCount + 1), 30000);
+            console.warn(`⚠️ Bot conflict (409) — kemungkinan ada instance lain yang berjalan.`);
+            console.warn(`   Pastikan hanya satu "node app.js" yang berjalan.`);
+            console.warn(`   Mencoba ulang dalam ${delay / 1000} detik... (percobaan ${retryCount + 1})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return launchBot(retryCount + 1);
+        }
+        // Error lain — lempar ke atas
+        throw err;
+    }
+}
+
+launchBot();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

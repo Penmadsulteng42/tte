@@ -3,6 +3,12 @@ const path = require('path');
 const { url }                  = require('./config');
 const { docKey, safeFilename } = require('./utils');
 
+/** Status di aplikasi TTE masih tahap dokumen belum final (multi penandatangan) */
+function statusTTEMasihDraf(statusTd) {
+    const s = (statusTd || '').toLowerCase();
+    return s.includes('draf') || s.includes('draft');
+}
+
 /**
  * Cari dokumen di tabel admin semua halaman
  */
@@ -27,13 +33,26 @@ async function cariDiTabel(page, namaCari) {
 
             if (!cocok) continue;
 
-            // Cek kolom Status — harus "Sukses" agar semua penandatangan sudah selesai
-            const statusTd  = await row.locator('td').nth(4).innerText();
+            // Kolom status di admin — harus "Sukses" + tombol FINAL (semua penandatangan selesai).
+            // Jika sheet kolom N=SIGNED tapi di sini masih Draf → jangan unduh; lanjut dokumen lain & batch upload/TTE.
+            const statusTd  = (await row.locator('td').nth(4).innerText()).trim();
             const isSukses  = statusTd.toLowerCase().includes('sukses');
 
             if (!isSukses) {
-                console.log(`   ⚠️ Ditemukan '${nama}' tapi status: ${statusTd.trim()} (belum Sukses), dilewati`);
-                continue;
+                // Satu dokumen = satu baris yang cocok; jika belum Sukses, jangan lanjut ke halaman lain
+                // (menghindari cocokkan substring lain, mis. "ARIS" di halaman lain).
+                if (statusTTEMasihDraf(statusTd)) {
+                    console.log(
+                        `   ⏭️ Antrian "${namaCari}" → baris "${nama}", status TTE "${statusTd}" — ` +
+                        `belum final; skip download (tidak lanjut halaman berikutnya)`
+                    );
+                } else {
+                    console.log(
+                        `   ⏭️ Antrian "${namaCari}" → baris "${nama}", status TTE "${statusTd}" ` +
+                        `(bukan Sukses); skip download (tidak lanjut halaman berikutnya)`
+                    );
+                }
+                return null;
             }
 
             // Cek tombol FINAL di kolom Unduh
@@ -41,8 +60,11 @@ async function cariDiTabel(page, namaCari) {
             const hasFinal = await finalBtn.count() > 0;
 
             if (!hasFinal) {
-                console.log(`   ⚠️ Ditemukan '${nama}' status Sukses tapi tombol FINAL belum tersedia`);
-                continue;
+                console.log(
+                    `   ⏭️ Antrian "${namaCari}" → baris "${nama}" Sukses tapi FINAL belum ada — ` +
+                    `stop pencarian, lanjut dokumen berikutnya`
+                );
+                return null;
             }
 
             console.log(`   ✓ Ditemukan di halaman ${currentPage}: ${nama} (Status: Sukses)`);
@@ -95,47 +117,44 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
         const found = await cariDiTabel(page, item.nama);
 
         if (!found) {
-            console.log(`   ❌ '${item.nama}' tidak ditemukan atau belum FINAL, dilewati`);
+            console.log(
+                `   ⏭️ '${item.nama}' tidak diunduh — tidak ada baris Sukses + FINAL di admin ` +
+                `(atau belum muncul di daftar; kolom N sheet mungkin SIGNED terlalu dini)`
+            );
             continue;
         }
 
         try {
-            // Klik tombol FINAL → tunggu popup muncul
-            const [popup] = await Promise.all([
-                page.waitForEvent('popup', { timeout: 120000 }),
+            // Gunakan mekanisme download Playwright langsung dari klik FINAL.
+            const [download] = await Promise.all([
+                page.waitForEvent('download', { timeout: 60000 }),
                 found.finalBtn.first().click()
             ]);
 
-            await popup.waitForLoadState('load', { timeout: 120000 });
+            // Format nama file: nama_dokumen_tanggal+nomorurut
+            // tanggal: YYYYMMDD (hari proses), nomor urut: 2 digit per sesi download
+            const baseName = (item.nama || found.nama || 'dokumen').replace(/\s+/g, '_');
+            const now      = new Date();
+            const y        = now.getFullYear();
+            const m        = String(now.getMonth() + 1).padStart(2, '0');
+            const d        = String(now.getDate()).padStart(2, '0');
+            const tglPart  = `${y}${m}${d}`;
+            const urutPart = String(q + 1).padStart(2, '0');
+            const filename = safeFilename(found.waktu, `${baseName}_${tglPart}${urutPart}`);
 
-            // Ambil URL PDF dari popup — ini URL dokumen yang sudah ditandatangani
-            const pdfUrl = popup.url();
-            if (!pdfUrl || pdfUrl === 'about:blank') {
-                await popup.close();
-                throw new Error('Popup URL kosong / belum siap');
+            const tempPath = await download.path();
+            if (!tempPath) {
+                throw new Error('Playwright tidak memberikan path file unduhan');
             }
 
-            console.log(`   🔗 PDF URL: ${pdfUrl}`);
-
-            // Fetch PDF ke buffer memory menggunakan context request
-            const response = await page.context().request.get(pdfUrl, { timeout: 120000 });
-
-            if (!response.ok()) {
-                await popup.close();
-                throw new Error(`HTTP ${response.status()} saat fetch PDF`);
-            }
-
-            const buffer   = await response.body();
-            const filename = safeFilename(found.waktu, found.nama);
+            const buffer = fs.readFileSync(tempPath);
 
             if (!buffer || buffer.length === 0) {
-                await popup.close();
                 throw new Error('Buffer PDF kosong / 0 bytes');
             }
 
             console.log(`   ✅ PDF berhasil: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`);
 
-            await popup.close();
             await page.waitForTimeout(2000);
 
             processedItems.push({

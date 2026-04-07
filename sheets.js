@@ -32,7 +32,7 @@ const SHEET_NAME = 'QUEUE_NEW';
  * J  → Penandatangan 4      K  → Anchor 4
  * L  → Tahun
  * M  → Link File
- * N  → Status (READY → UPLOADED → SIGNED → SENT/DOWNLOADED)
+ * N  → Status: kosong/READY = antrian upload; UPLOADED/PARAFED/SIGNED sesuai pipeline; SENT/DOWNLOADED = selesai
  * O  → Chat ID Telegram
  */
 

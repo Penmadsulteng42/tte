@@ -1,90 +1,110 @@
 const { kabid } = require('./config');
 
+/**
+ * Inbox paraf pegawai: https://tte.kemenag.go.id/pegawai/document/verify/index
+ * Jika ada baris dengan checkbox data, centang select_all → submit → passphrase.
+ * Jika tidak ada dokumen di meja, kembalikan [] (lanjut TTE).
+ *
+ * @param {import('playwright').Page} page
+ * @param {object[]} queueItems  Baris queue yang statusnya UPLOADED dan butuh paraf kabid (untuk update status jika sukses)
+ * @returns {Promise<object[]>}  queueItems jika paraf berhasil; [] jika dilewati/gagal
+ */
 module.exports = async function signParaf(page, queueItems) {
-    await page.goto('https://tte.kemenag.go.id/pegawai/document/verify/index', {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000
-    });
-
-    // Tunggu tabel muncul
-    await page.waitForSelector('table tbody tr', { state: 'attached', timeout: 30000 });
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
-    console.log('✓ Halaman Inbox Paraf dimuat');
-
-    // Cek apakah ada dokumen di inbox
-    const count = await page.locator('table tbody tr').count();
-    console.log(`📄 Total baris di Inbox Paraf: ${count}`);
-
-    if (count === 0) {
-        console.log('ℹ️ Inbox Paraf kosong');
+    if (!queueItems || queueItems.length === 0) {
         return [];
     }
 
-    // Centang select_all untuk memilih semua dokumen sekaligus
-    await page.evaluate(() => {
-        const selectAll = document.querySelector('input[name="select_all"]');
-        if (selectAll) {
-            selectAll.checked = true;
-            selectAll.dispatchEvent(new Event('change'));
-            selectAll.dispatchEvent(new Event('click'));
-        }
-    });
-    await page.waitForTimeout(500);
-    console.log(`✓ Semua ${count} dokumen dicentang`);
-
-    console.log(`\n✍️ Memaraf ${count} dokumen...`);
-
-    // Klik "Lakukan Pemarafan Elektronik Pada Dokumen Terpilih"
-    await page.waitForSelector('button#submit-btn', { state: 'visible', timeout: 10000 });
-    await page.click('button#submit-btn');
-    console.log('✓ Tombol pemarafan diklik');
-
-    // Tunggu navigasi ke halaman DS Dokumen
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
-    await page.waitForSelector('#passphrase', { state: 'visible', timeout: 15000 });
-    console.log('✓ Halaman DS Dokumen terbuka');
-
-    // Isi passphrase kabid
-    await page.fill('#passphrase', kabid.passphrase);
-    await page.waitForTimeout(1000);
-    console.log('✓ Passphrase diisi');
-
-    // Klik "Tanda Tangan secara Digital Berkas PDF"
-    await page.click('button#submit-btn.btn-danger');
-    console.log('⏳ Memproses pemarafan digital...');
-
-    // Tunggu proses selesai
     try {
-        await page.waitForLoadState('load', { timeout: 120000 });
+        await page.goto('https://tte.kemenag.go.id/pegawai/document/verify/index', {
+            waitUntil: 'networkidle',
+            timeout: 120000
+        });
+
+        const currentUrl = page.url();
+        if (currentUrl.includes('/login') || currentUrl.includes('tte.kemenag.go.id/login')) {
+            console.log('❌ Paraf: sesi Kabid putus — bukan salah password, tapi cookie habis atau server memutus sesi sebelum buka inbox paraf');
+            return [];
+        }
+
+        await page.waitForSelector('table tbody', { timeout: 30000 });
+
+        const perRowCb = page.locator('table tbody tr input[type="checkbox"]:not([name="select_all"])');
+        const nRows = await page.locator('table tbody tr').count();
+        const nCheck = await perRowCb.count();
+
+        if (nRows === 0 || nCheck === 0) {
+            console.log('ℹ️ Inbox paraf kosong — tidak ada dokumen untuk diparaf (lanjut TTE)');
+            return [];
+        }
+
+        console.log(`📋 Inbox paraf: ~${nCheck} checkbox data — memakai select_all`);
+
+        const selectAll = page.locator('input[name="select_all"]');
+        await selectAll.waitFor({ state: 'visible', timeout: 15000 });
+        await selectAll.click({ force: true });
+        await page.waitForTimeout(400);
+
+        await page.waitForSelector('#submit-btn', { state: 'visible', timeout: 15000 });
+        await page.click('#submit-btn');
+        await page.waitForTimeout(800);
+
+        await page.waitForSelector('#passphrase', { state: 'visible', timeout: 30000 });
+        await page.fill('#passphrase', kabid.passphrase);
+        await page.waitForTimeout(300);
+
+        const confirmBtn = page.locator('button#submit-btn.btn-danger').first();
+        if (await confirmBtn.count() > 0) {
+            await confirmBtn.click();
+        } else {
+            await page.click('button:has-text("Tanda Tangan secara Digital Berkas PDF")');
+        }
+
+        console.log('⏳ Menunggu hasil paraf...');
+
+        await page.waitForLoadState('networkidle', { timeout: 120000 }).catch(() => {});
 
         const successSelectors = [
-            '.alert-success', '.toast-success', '.swal2-success',
-            'div:has-text("berhasil")', 'div:has-text("sukses")'
+            '.alert-success',
+            '.toast-success',
+            '.swal2-success',
+            'div:has-text("berhasil")',
+            'div:has-text("sukses")'
         ];
 
-        let successFound = false;
+        let ok = false;
         for (const sel of successSelectors) {
             try {
-                await page.waitForSelector(sel, { timeout: 5000 });
-                console.log(`   ✓ Notifikasi sukses terdeteksi: ${sel}`);
-                successFound = true;
+                await page.waitForSelector(sel, { timeout: 8000 });
+                console.log(`   ✓ Paraf: notifikasi sukses (${sel})`);
+                ok = true;
                 break;
-            } catch (_) {}
+            } catch (_) { /* next */ }
         }
 
-        if (!successFound) {
-            console.log('   ⚠️ Notifikasi sukses tidak terdeteksi, tunggu 5 detik...');
-            await page.waitForTimeout(5000);
+        if (!ok) {
+            await page.waitForTimeout(2000);
+            try {
+                await page.goto('https://tte.kemenag.go.id/pegawai/document/verify/index', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 60000
+                });
+                const nAfter = await page.locator('table tbody tr input[type="checkbox"]:not([name="select_all"])').count();
+                if (nAfter === 0) {
+                    console.log('   ✓ Paraf: inbox data kosong setelah proses');
+                    ok = true;
+                }
+            } catch (_) { /* abaikan */ }
         }
 
-        await page.waitForLoadState('load', { timeout: 30000 });
-        console.log(`✅ ${count} dokumen berhasil diparaf`);
+        if (!ok) {
+            console.log('   ⚠️ Paraf: tidak ada konfirmasi sukses jelas — status queue tidak diubah');
+            return [];
+        }
 
-    } catch (err) {
-        console.warn(`⚠️ Timeout menunggu konfirmasi paraf: ${err.message}`);
-        console.warn('   Lanjut ke proses berikutnya...');
+        console.log(`✅ Paraf selesai — ${queueItems.length} entri queue akan ditandai PARAFED`);
+        return queueItems;
+    } catch (e) {
+        console.error('❌ Gagal paraf:', e.message);
+        return [];
     }
-
-    // Return semua queueItems yang masuk ke sesi paraf ini
-    return queueItems;
 };
