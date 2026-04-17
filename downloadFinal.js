@@ -29,82 +29,70 @@ function statusTTEMasihDraf(statusTd) {
  * Cari dokumen di tabel admin semua halaman
  */
 async function cariDiTabel(page, namaCari) {
-    let currentPage = 1;
+    // 1. Pastikan kita berada di halaman yang benar
+    const targetUrl = 'https://tte.kemenag.go.id/satker/dokumen/naskah/index/unggah';
+    if (!page.url().includes('/naskah/index/unggah')) {
+        await page.goto(targetUrl, { waitUntil: 'networkidle' });
+    }
 
-    while (true) {
-        await page.waitForSelector('table tbody tr', { timeout: 120000 });
+    try {
+        console.log(`\n🔍 Memulai pencarian spesifik: "${namaCari}"`);
+
+        // 2. Gunakan kotak pencarian (Search Box) DataTables
+        // Kebanyakan web pemerintah menggunakan selector input[type="search"]
+        const searchInput = page.locator('input[type="search"], .dataTables_filter input').first();
+        await searchInput.fill(''); // Bersihkan pencarian sebelumnya
+        await searchInput.fill(namaCari);
+
+        // Jeda sebentar agar filter website bereaksi
+        await page.waitForTimeout(2000);
+
+        // 3. Tunggu hingga tabel selesai memuat (loading)
+        // Kita menunggu indikator "No matching records" ATAU adanya baris data
+        await page.waitForSelector('table tbody tr', { timeout: 30000 });
 
         const rows = page.locator('table tbody tr');
-        const count = await rows.count();
-        console.log(`   🔍 Halaman ${currentPage}: ${count} baris`);
+        const firstRowText = await rows.first().innerText();
 
-        for (let i = 0; i < count; i++) {
-            const row = rows.nth(i);
-            const waktu = (await row.locator('td').nth(1).innerText()).trim();
-            const nama = (await row.locator('td').nth(2).innerText()).trim();
-
-            const cocok =
-                nama.toLowerCase().includes(namaCari.toLowerCase()) ||
-                namaCari.toLowerCase().includes(nama.toLowerCase());
-
-            if (!cocok) continue;
-
-            // Kolom status di admin — harus "Sukses" + tombol FINAL (semua penandatangan selesai).
-            // Jika sheet kolom N=SIGNED tapi di sini masih Draf → jangan unduh; lanjut dokumen lain & batch upload/TTE.
-            const statusTd = (await row.locator('td').nth(4).innerText()).trim();
-            const isSukses = statusTd.toLowerCase().includes('sukses');
-
-            if (!isSukses) {
-                // Satu dokumen = satu baris yang cocok; jika belum Sukses, jangan lanjut ke halaman lain
-                // (menghindari cocokkan substring lain, mis. "ARIS" di halaman lain).
-                if (statusTTEMasihDraf(statusTd)) {
-                    console.log(
-                        `   ⏭️ Antrian "${namaCari}" → baris "${nama}", status TTE "${statusTd}" — ` +
-                        `belum final; skip download (tidak lanjut halaman berikutnya)`
-                    );
-                } else {
-                    console.log(
-                        `   ⏭️ Antrian "${namaCari}" → baris "${nama}", status TTE "${statusTd}" ` +
-                        `(bukan Sukses); skip download (tidak lanjut halaman berikutnya)`
-                    );
-                }
-                return null;
-            }
-
-            // Cek tombol FINAL di kolom Unduh
-            const finalBtn = row.locator('a[href*="keaslian"], a[href*="signed_dokumen"]');
-            const hasFinal = await finalBtn.count() > 0;
-
-            if (!hasFinal) {
-                console.log(
-                    `   ⏭️ Antrian "${namaCari}" → baris "${nama}" Sukses tapi FINAL belum ada — ` +
-                    `stop pencarian, lanjut dokumen berikutnya`
-                );
-                return null;
-            }
-
-            console.log(`   ✓ Ditemukan di halaman ${currentPage}: ${nama} (Status: Sukses)`);
-            return { waktu, nama, row, finalBtn };
-        }
-
-        // Cek tombol Next
-        const nextBtn = page.locator([
-            'li.paginate_button.next:not(.disabled) a',
-            'a[data-dt-idx]:has-text("Next")',
-            'a.page-link:has-text("›")',
-            'a.page-link:has-text("Next")'
-        ].join(', '));
-
-        const hasNext = await nextBtn.count() > 0;
-        if (!hasNext) {
-            console.log(`   ⚠️ Tidak ditemukan sampai halaman terakhir (${currentPage})`);
+        // 4. Cek apakah hasil pencarian kosong
+        if (firstRowText.toLowerCase().includes('tidak ditemukan') ||
+            firstRowText.toLowerCase().includes('no matching records')) {
+            console.log(`   ⚠️ Dokumen "${namaCari}" tidak ditemukan di sistem TTE.`);
             return null;
         }
 
-        await nextBtn.first().click();
-        await page.waitForTimeout(1500);
-        currentPage++;
+        // 5. Loop hasil pencarian (biasanya hanya 1-2 baris karena sudah difilter)
+        const count = await rows.count();
+        for (let i = 0; i < count; i++) {
+            const row = rows.nth(i);
+            const namaWeb = (await row.locator('td').nth(2).innerText()).trim();
+
+            // Verifikasi kecocokan nama (Double check)
+            if (namaWeb.toLowerCase().includes(namaCari.toLowerCase()) ||
+                namaCari.toLowerCase().includes(namaWeb.toLowerCase())) {
+
+                const waktu = (await row.locator('td').nth(1).innerText()).trim();
+                const statusTd = (await row.locator('td').nth(4).innerText()).trim();
+                const isSukses = statusTd.toLowerCase().includes('sukses');
+
+                // Cek apakah tombol download FINAL sudah muncul
+                const finalBtn = row.locator('a[href*="keaslian"], a[href*="signed_dokumen"], a[href*="download"]');
+                const hasFinal = await finalBtn.count() > 0;
+
+                if (isSukses && hasFinal) {
+                    console.log(`   ✅ Ditemukan & Siap Unduh: "${namaWeb}"`);
+                    return { waktu, nama: namaWeb, row, finalBtn: finalBtn.first() };
+                } else {
+                    console.log(`   ⏭️ Dokumen ditemukan tapi belum FINAL (Status: ${statusTd})`);
+                    return null; // Stop pencarian karena baris sudah benar tapi status belum siap
+                }
+            }
+        }
+    } catch (err) {
+        console.error(`   ❌ Gagal saat mencari "${namaCari}":`, err.message);
     }
+
+    return null;
 }
 
 /**
@@ -114,7 +102,7 @@ async function cariDiTabel(page, namaCari) {
  * - Jika ada chatId → kirim ke Telegram (tidak simpan ke disk)
  * - Jika tidak ada chatId → simpan ke disk
  */
-module.exports = async function downloadFinal(page, queueItems, downloadDir) {
+async function downloadFinal(page, queueItems, downloadDir) {
     await page.goto(url.download, { waitUntil: 'load', timeout: 120000 });
     await page.waitForSelector('table tbody tr');
 
@@ -222,3 +210,6 @@ module.exports = async function downloadFinal(page, queueItems, downloadDir) {
 
     return processedItems;
 };
+
+module.exports = downloadFinal;
+module.exports.cariDiTabel = cariDiTabel;

@@ -1,0 +1,145 @@
+<div class="max-w-4xl mx-auto bg-white p-8 rounded-2xl shadow-sm border">
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Form Pengajuan TTE Baru</h2>
+
+    <form id="tteForm" onsubmit="handleFormSubmit(event)">
+        <div class="mb-5">
+            <label class="block text-sm font-bold text-gray-700 mb-2">Nama Dokumen</label>
+            <input type="text" name="namaDokumen" required
+                class="w-full border-gray-300 rounded-lg p-3 border focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div class="mb-5 p-4 bg-gray-50 rounded-lg">
+            <label class="block text-sm font-bold text-gray-700 mb-3">Pilih Pemaraf (Bisa lebih dari satu)</label>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <label
+                    class="flex items-center space-x-2 p-2 bg-white rounded border cursor-pointer hover:bg-indigo-50">
+                    <input type="checkbox" name="pemaraf" value="null" onchange="toggleParaf(this)"> <span>Tidak
+                        Diparaf</span>
+                </label>
+                <div id="paraf-list" class="contents"></div>
+            </div>
+        </div>
+
+        <div id="penandatangan-container" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg bg-indigo-50/30">
+                <div>
+                    <label class="block text-xs font-bold text-indigo-600 uppercase">Penandatangan 1 (Wajib)</label>
+                    <select name="p1" required onchange="updateDropdowns()"
+                        class="w-full mt-1 p-2 rounded border"></select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-indigo-600 uppercase">Anchor 1 (Bisa pilih
+                        banyak)</label>
+                    <div id="anchor1-list" class="flex space-x-2 mt-2"></div>
+                </div>
+            </div>
+
+            <div id="extra-signers" class="space-y-4"></div>
+
+            <button type="button" onclick="addSignerField()" id="btnAddSigner"
+                class="text-sm font-bold text-indigo-600 hover:text-indigo-800">
+                <i class="fas fa-plus-circle"></i> Tambah Penandatangan Lain
+            </button>
+        </div>
+
+        <div class="mt-8 border-t pt-6">
+            <label class="block text-sm font-bold text-gray-700 mb-2">Upload Dokumen PDF</label>
+            <input type="file" id="fileInput" accept=".pdf" required
+                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+        </div>
+
+        <button type="submit" id="btnSimpan"
+            class="w-full mt-8 bg-indigo-600 text-white font-bold py-4 rounded-xl hover:bg-indigo-700 transition shadow-lg">
+            Kirim Pengajuan
+        </button>
+    </form>
+</div>
+
+<script>
+    let masterPejabat = [];
+    let currentSignerCount = 1;
+
+    // Load awal data pejabat
+    window.onload = () => {
+        google.script.run.withSuccessHandler(data => {
+            masterPejabat = data.pejabat;
+            renderParaf(data.pejabat);
+            renderAnchor('anchor1-list', 'a1');
+            updateDropdowns(); // Isi dropdown p1
+        }).getFormMasterData();
+    };
+
+    function renderParaf(pejabat) {
+        const list = document.getElementById('paraf-list');
+        list.innerHTML = pejabat.map(p => `
+      <label class="flex items-center space-x-2 p-2 bg-white rounded border cursor-pointer paraf-item">
+        <input type="checkbox" name="pemaraf" value="${p}" onchange="updateDropdowns()"> <span>${p}</span>
+      </label>
+    `).join('');
+    }
+
+    function renderAnchor(targetId, name) {
+        const anchors = ["$", "*", "#", "^"];
+        document.getElementById(targetId).innerHTML = anchors.map(a => `
+      <label class="inline-flex items-center px-3 py-1 bg-white border rounded text-sm cursor-pointer hover:bg-gray-50">
+        <input type="checkbox" name="${name}" value="${a}" class="mr-1"> ${a}
+      </label>
+    `).join('');
+    }
+
+    function updateDropdowns() {
+        // Ambil semua yang sudah dicentang di PEMARAF
+        const selectedParaf = Array.from(document.querySelectorAll('input[name="pemaraf"]:checked')).map(el => el.value);
+
+        // Ambil semua yang sudah dipilih di Penandatangan sebelumnya
+        const p1Value = document.querySelector('select[name="p1"]')?.value;
+        // ... logic berlanjut untuk p2, p3, p4
+
+        // Update isi Select P1
+        const p1 = document.querySelector('select[name="p1"]');
+        const available = masterPejabat.filter(p => !selectedParaf.includes(p));
+
+        let options = '<option value="">-- Pilih --</option>';
+        available.forEach(p => {
+            options += `<option value="${p}" ${p1Value === p ? 'selected' : ''}>${p}</option>`;
+        });
+        p1.innerHTML = options;
+    }
+
+    function toggleParaf(el) {
+        const otherParafs = document.querySelectorAll('.paraf-item');
+        if (el.checked) {
+            otherParafs.forEach(item => {
+                item.classList.add('opacity-50', 'pointer-events-none');
+                item.querySelector('input').checked = false;
+            });
+        } else {
+            otherParafs.forEach(item => item.classList.remove('opacity-50', 'pointer-events-none'));
+        }
+        updateDropdowns();
+    }
+
+    // Fungsi Simpan Data (Termasuk Upload File ke Drive)
+    function handleFormSubmit(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btnSimpan');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses Dokumen...';
+
+        const file = document.getElementById('fileInput').files[0];
+        const reader = new FileReader();
+
+        reader.onload = function (f) {
+            const fileData = {
+                base64: f.target.result.split(',')[1],
+                name: file.name,
+                type: file.type
+            };
+
+            // Ambil semua data form
+            const formData = new FormData(document.getElementById('tteForm'));
+            // Kirim ke server GAS...
+        };
+        reader.readAsDataURL(file);
+    }
+</script>

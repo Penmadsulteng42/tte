@@ -4,6 +4,7 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 const { readRows, updateStatus, getLastModifiedTime } = require('./sheets');
+const { url } = require('./config');
 const { notifyDone, notifyError } = require('./notify');
 
 const loginAdmin = require('./loginAdmin');
@@ -55,6 +56,56 @@ function statusUploaded(item) {
 
 function statusParafed(item) {
     return statusNorm(item) === 'PARAFED';
+}
+
+function statusDraft(item) {
+    return statusNorm(item) === 'DRAFT';
+}
+
+/**
+ * Fungsi baru: Periksa status di aplikasi TTE untuk dokumen UPLOADED/PARAFED/DRAFT.
+ * Jika sudah final (Sukses + tombol FINAL), update status di spreadsheet ke SIGNED dan langsung download.
+ */
+async function checkAndUpdateSignedStatus(browser, queue) {
+    // 1. Filter hanya dokumen yang masih DRAFT/UPLOADED/PARAFED
+    const itemsToCheck = queue.filter(item =>
+        ['DRAFT', 'UPLOADED', 'PARAFED'].includes(item.status?.toUpperCase())
+    );
+
+    if (itemsToCheck.length === 0) return;
+
+    const page = await browser.newPage();
+    try {
+        await loginAdmin(page); // Login sekali saja di awal
+
+        for (const item of itemsToCheck) {
+            // Gunakan fungsi cariDiTabel yang sudah kita optimasi dengan Search Box
+            const result = await downloadFinal.cariDiTabel(page, item.nama);
+
+            if (result && result.finalBtn) {
+                console.log(`✅ Dokumen "${item.nama}" terdeteksi FINAL di web.`);
+
+                // Update status ke SIGNED di Google Sheets
+                await updateStatus(item.row, 'SIGNED');
+
+                // LANGSUNG DOWNLOAD & KIRIM (Tanpa Menunggu Cron Berikutnya)
+                console.log(`📥 Memulai download otomatis untuk ${item.nama}...`);
+                const processed = await downloadFinal(browser, [item]);
+
+                if (processed && processed.length > 0) {
+                    const doc = processed[0];
+                    const terkirim = await notifyDone(item.chatId, item.nama, doc.buffer, doc.filename);
+                    if (terkirim) {
+                        await updateStatus(item.row, 'SENT');
+                    }
+                }
+            } else {
+                console.log(`⏳ Dokumen "${item.nama}" masih dalam proses (belum Final).`);
+            }
+        }
+    } finally {
+        await page.close();
+    }
 }
 
 /** Ringkas isi sheet: download / paraf / TTE / upload */
@@ -138,24 +189,30 @@ async function runRPA() {
             const queue = await readRows();
             const isValid = i => i.linkFileLocal && i.penandatangan1 && i.nama;
 
-            logScanSpreadsheet(queue, pass);
+            // Periksa status di aplikasi TTE untuk dokumen yang sudah diupload/paraf
+            await checkAndUpdateSignedStatus(browser, queue);
 
-            const toUpload = queue.filter(i => antrianPerluUpload(i) && i.tahun > 2025 && isValid(i));
+            // Baca ulang queue setelah update status
+            const updatedQueue = await readRows();
 
-            const invalidRows = queue.filter(i => antrianPerluUpload(i) && i.tahun > 2025 && !isValid(i));
+            logScanSpreadsheet(updatedQueue, pass);
+
+            const toUpload = updatedQueue.filter(i => antrianPerluUpload(i) && i.tahun > 2025 && isValid(i));
+
+            const invalidRows = updatedQueue.filter(i => antrianPerluUpload(i) && i.tahun > 2025 && !isValid(i));
             if (invalidRows.length > 0) {
                 console.warn(`⚠️ ${invalidRows.length} baris (N kosong/READY) dilewati — data tidak lengkap:`);
                 invalidRows.forEach(i => console.warn(`   - Baris ${i.row}: ${i.nama || '(tanpa nama)'}`));
             }
 
-            const toParaf = queue.filter(i =>
+            const toParaf = updatedQueue.filter(i =>
                 statusUploaded(i) && i.tahun > 2025 && butuhParafKabid(i)
             );
-            const toSign = queue.filter(i =>
+            const toSign = updatedQueue.filter(i =>
                 (statusParafed(i) || (statusUploaded(i) && !butuhParafKabid(i))) &&
                 i.tahun > 2025
             );
-            const toDownload = queue.filter(i => statusKolomNBisaDiunduh(i) && i.tahun > 2025);
+            const toDownload = updatedQueue.filter(i => statusKolomNBisaDiunduh(i) && i.tahun > 2025);
 
             if (toUpload.length === 0 && toParaf.length === 0 && toSign.length === 0 && toDownload.length === 0) {
                 if (pass === 0) {
@@ -313,3 +370,21 @@ console.log('   Ketik Ctrl+C untuk menghentikan\n');
 
 runRPA();
 cron.schedule('*/2 * * * *', () => { runRPA(); });
+
+// Cron terpisah untuk pengecekan status DRAFT setiap 5 menit
+cron.schedule('*/2 * * * *', async () => {
+    console.log('🔍 Memeriksa status DRAFT di TTE Kemenag...');
+    const browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    });
+    try {
+        const queue = await readRows();
+        await checkAndUpdateSignedStatus(browser, queue);
+        console.log('✅ Pengecekan status DRAFT selesai');
+    } catch (err) {
+        console.error('❌ Error checking DRAFT status:', err.message);
+    } finally {
+        await browser.close();
+    }
+});

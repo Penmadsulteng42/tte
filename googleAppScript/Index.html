@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <base target="_top">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- ✅ SweetAlert2 untuk notifikasi popup yang cantik -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="app">
+        <div id="login-view" class="min-h-screen flex items-center justify-center">
+            <?!= include('Login_Page'); ?>
+        </div>
+
+        <div id="main-view" class="hidden flex min-h-screen">
+            <aside class="w-64 bg-indigo-900 text-white flex-shrink-0">
+                <div class="p-6 font-bold text-xl border-b border-indigo-800">PENMAD TTE</div>
+                <nav class="mt-6">
+                    <a href="javascript:void(0)" onclick="showPage('dashboard')"
+                        class="block py-3 px-6 hover:bg-indigo-800 flex items-center">
+                        <i class="fas fa-home mr-3"></i> Dashboard
+                    </a>
+                    <a href="javascript:void(0)" onclick="showPage('tte')"
+                        class="block py-3 px-6 hover:bg-indigo-800 flex items-center">
+                        <i class="fas fa-file-signature mr-3"></i> Pengajuan TTE
+                    </a>
+                    <a href="javascript:void(0)" onclick="logout()" class="block py-3 px-6 hover:bg-red-800 mt-20">
+                        <i class="fas fa-sign-out-alt mr-3"></i> Keluar
+                    </a>
+                </nav>
+            </aside>
+
+            <main class="flex-1 flex flex-col">
+                <header class="bg-white shadow-sm p-4 flex justify-between items-center">
+                    <div class="font-semibold" id="page-title">Dashboard</div>
+                    <div class="text-sm text-gray-600">Halo, <span id="display-name"
+                            class="font-bold text-indigo-600"></span></div>
+                </header>
+
+                <div class="p-8">
+                    <!-- Halaman Dashboard -->
+                    <div id="page-dashboard" class="page-content">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
+                                <div class="text-gray-500 text-sm font-bold uppercase">Total Pengajuan</div>
+                                <div class="text-3xl font-black" id="stat-total">0</div>
+                            </div>
+                            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-yellow-500">
+                                <div class="text-gray-500 text-sm font-bold uppercase">Dalam Proses</div>
+                                <div class="text-3xl font-black" id="stat-proses">0</div>
+                            </div>
+                            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+                                <div class="text-gray-500 text-sm font-bold uppercase">Selesai</div>
+                                <div class="text-3xl font-black" id="stat-selesai">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Halaman TTE -->
+                    <div id="page-tte" class="page-content hidden">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-xl font-bold">Pengajuan Tanda Tangan Elektronik</h2>
+                            <button onclick="openModal()"
+                                class="bg-indigo-600 text-white font-bold px-5 py-2 rounded-xl hover:bg-indigo-700 transition flex items-center space-x-2">
+                                <i class="fas fa-plus"></i>
+                                <span>Buat Pengajuan Baru</span>
+                            </button>
+                        </div>
+
+                        <!-- Tabel Daftar Pengajuan -->
+                        <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50 text-gray-500 uppercase text-xs font-bold">
+                                    <tr>
+                                        <th class="px-4 py-3 text-center w-10">No</th>
+                                        <th class="px-4 py-3 text-left">Nama Dokumen</th>
+                                        <th class="px-4 py-3 text-left">Pemaraf</th>
+                                        <th class="px-4 py-3 text-left">Penandatangan</th>
+                                        <th class="px-4 py-3 text-center">Status</th>
+                                        <th class="px-4 py-3 text-center">Link Google Drive</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tte-table-body">
+                                    <tr>
+                                        <td colspan="6" class="text-center py-10 text-gray-400 italic">
+                                            <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                                            Belum ada pengajuan
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ✅ MODAL untuk Form Pengajuan -->
+    <div id="modal-overlay"
+        class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 class="text-lg font-bold text-gray-800">Form Pengajuan TTE Baru</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <?!= include('Form_TTE'); ?>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+
+        // ✅ Fungsi membuka modal form pengajuan
+        function openModal() {
+            document.getElementById('modal-overlay').classList.remove('hidden');
+            // Inisialisasi ulang form setiap kali dibuka
+            if (typeof initForm === 'function') {
+                initForm();
+            }
+        }
+
+        // ✅ Fungsi menutup modal form pengajuan
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.add('hidden');
+        }
+
+        // ✅ Fungsi memuat ulang daftar pengajuan TTE di tabel (6 kolom)
+        function loadTTEList() {
+            const tbody = document.getElementById('tte-table-body');
+            if (!tbody) return console.error("Elemen tte-table-body tidak ditemukan!");
+
+            // Tampilkan animasi loading
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-10 text-gray-400">
+                        <i class="fas fa-circle-notch fa-spin text-2xl mb-2 block"></i>
+                        Memuat data...
+                    </td>
+                </tr>`;
+
+            google.script.run
+                .withSuccessHandler(function (rows) {
+                    if (!rows || rows.length === 0) {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="6" class="text-center py-10 text-gray-400 italic">
+                                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                                    Belum ada pengajuan
+                                </td>
+                            </tr>`;
+                        return;
+                    }
+
+                    tbody.innerHTML = rows.map(row => {
+                        // --- Warna badge status ---
+                        const status = String(row.status || '').toUpperCase();
+                        const statusMap = {
+                            'READY': 'bg-yellow-100 text-yellow-700 border border-yellow-200',
+                            'PROCESSING': 'bg-blue-100 text-blue-700 border border-blue-200',
+                            'SIGNED': 'bg-green-100 text-green-700 border border-green-200',
+                            'DOWNLOADED': 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+                        };
+                        const statusClass = statusMap[status] || 'bg-gray-100 text-gray-600';
+
+                        // --- Render baris Pemaraf ---
+                        // row.pemaraf = array of string ["Kabid", "Kabag"]
+                        const pemarafHTML = (row.pemaraf && row.pemaraf.length > 0)
+                            ? row.pemaraf.map((nama, i) =>
+                                `<div class="text-xs text-gray-600 leading-6">
+                                    <span class="font-semibold">${i + 1}.</span> ${nama}
+                                </div>`
+                            ).join('')
+                            : '<span class="text-gray-400 italic text-xs">Tidak Diparaf</span>';
+
+                        // --- Render baris Penandatangan ---
+                        // row.penandatangan = array of { nama, anchor }
+                        const ttdHTML = (row.penandatangan && row.penandatangan.length > 0)
+                            ? row.penandatangan.map((p, i) =>
+                                `<div class="text-xs text-gray-600 leading-6">
+                                    <span class="font-semibold">${i + 1}.</span>
+                                    ${p.nama}
+                                    <span class="ml-1 text-indigo-500 font-bold">: ${p.anchor || '-'}</span>
+                                </div>`
+                            ).join('')
+                            : '<span class="text-gray-400 italic text-xs">-</span>';
+
+                        // --- Tombol Link Drive ---
+                        const linkHTML = row.linkDrive
+                            ? `<a href="${row.linkDrive}" target="_blank"
+                                    class="inline-flex items-center space-x-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition border border-indigo-100">
+                                    <i class="fab fa-google-drive text-sm"></i>
+                                    <span>Buka</span>
+                               </a>`
+                            : '<span class="text-gray-300 text-xs italic">-</span>';
+
+                        return `
+                            <tr class="border-t hover:bg-gray-50 transition align-top">
+                                <td class="px-4 py-3 text-center text-gray-400 font-medium">${row.no}</td>
+                                <td class="px-4 py-3">
+                                    <div class="font-semibold text-gray-800">${row.namaDokumen}</div>
+                                    <div class="text-xs text-gray-400 mt-0.5">${row.tanggal}</div>
+                                </td>
+                                <td class="px-4 py-3">${pemarafHTML}</td>
+                                <td class="px-4 py-3">${ttdHTML}</td>
+                                <td class="px-4 py-3 text-center">
+                                    <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase ${statusClass}">
+                                        ${status}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-center">${linkHTML}</td>
+                            </tr>`;
+                    }).join('');
+                })
+                .withFailureHandler(function (err) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center py-10 text-red-400">
+                                <i class="fas fa-exclamation-triangle mb-2 block text-2xl"></i>
+                                Gagal memuat data: ${err.message || err}
+                            </td>
+                        </tr>`;
+                })
+                .getTTEList(currentUser.nip);
+        }
+
+        function showPage(pageId) {
+            try {
+                const pages = document.querySelectorAll('.page-content');
+                pages.forEach(p => p.classList.add('hidden'));
+
+                const targetPage = document.getElementById('page-' + pageId);
+                if (targetPage) {
+                    targetPage.classList.remove('hidden');
+                } else {
+                    console.error("Halaman ID 'page-" + pageId + "' tidak ditemukan!");
+                }
+
+                document.getElementById('page-title').innerText = pageId.toUpperCase();
+
+                if (pageId === 'dashboard') {
+                    loadStats();
+                } else if (pageId === 'tte') {
+                    loadTTEList();
+                }
+            } catch (e) {
+                console.error("Error saat pindah halaman:", e);
+            }
+        }
+
+        function loadStats() {
+            google.script.run.withSuccessHandler(stats => {
+                document.getElementById('stat-total').innerText = stats.total;
+                document.getElementById('stat-proses').innerText = stats.proses;
+                document.getElementById('stat-selesai').innerText = stats.selesai;
+            }).getDashboardData(currentUser.nip);
+        }
+
+        function handleLoginResponse(res) {
+            if (res.status === "success") {
+                currentUser = res.user;
+                document.getElementById('login-view').classList.add('hidden');
+                document.getElementById('main-view').classList.remove('hidden');
+                document.getElementById('display-name').innerText = res.user.nama;
+                localStorage.setItem('tte_user', JSON.stringify(res.user));
+                showPage('dashboard');
+            } else {
+                alert(res.message);
+            }
+        }
+
+        window.onload = () => {
+            const savedUser = localStorage.getItem('tte_user');
+            if (savedUser) {
+                currentUser = JSON.parse(savedUser);
+                document.getElementById('login-view').classList.add('hidden');
+                document.getElementById('main-view').classList.remove('hidden');
+                document.getElementById('display-name').innerText = currentUser.nama;
+                showPage('dashboard');
+            } else {
+                document.getElementById('login-view').classList.remove('hidden');
+            }
+        };
+
+        function logout() {
+            // 1. Konfirmasi ke user (Opsional)
+            if (!confirm("Apakah Anda yakin ingin keluar?")) return;
+
+            // 2. Hapus data user dari variabel global
+            currentUser = null;
+
+            // 3. Jika Anda menggunakan localStorage, hapus juga di sini
+            localStorage.removeItem('user_session');
+
+            // 4. Sembunyikan Dashboard dan tampilkan halaman Login
+            document.getElementById('main-view').classList.add('hidden');
+            document.getElementById('login-view').classList.remove('hidden');
+
+            // 5. Reset form login (kosongkan input NIP dan Password)
+            const loginForm = document.querySelector('#login-view form');
+            if (loginForm) loginForm.reset();
+
+            // 6. Tampilkan pesan sukses (Opsional)
+            console.log("Session cleared, redirecting to login...");
+        }
+    </script>
+</body>
+
+</html>
