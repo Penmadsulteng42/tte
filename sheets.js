@@ -43,7 +43,7 @@ async function readRows() {
 
         const res = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A2:O`
+            range: `${SHEET_NAME}!A2:Q`
         });
 
         const rows = res.data.values || [];
@@ -61,10 +61,12 @@ async function readRows() {
             anchor3: row[8] || '',
             penandatangan4: row[9] || '',
             anchor4: row[10] || '',
-            tahun: Number(row[11] || 0),
+            tanggal: row[11] || '',
             linkFileLocal: row[12] || '',
             status: row[13] || '',
-            chatId: row[14] || ''
+            chatId: row[14] || '',
+            nip: row[15] || '',
+            urlDrive: row[16] || ''
         }));
 
     } catch (err) {
@@ -97,8 +99,8 @@ async function appendRow(item) {
 
         await sheets.spreadsheets.values.append({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:O`,
-            valueInputOption: 'RAW',
+            range: `${SHEET_NAME}!A:Q`,
+            valueInputOption: 'USER_ENTERED',
             requestBody: {
                 values: [[
                     uuidv4(),             // A — ID
@@ -112,10 +114,12 @@ async function appendRow(item) {
                     item.anchor3,         // I
                     item.penandatangan4,  // J
                     item.anchor4,         // K
-                    item.tahun,           // L
+                    item.tanggal,         // L — Tanggal Pengajuan
                     item.linkFileLocal,   // M
                     'READY',              // N — READY = data lengkap, siap diproses
-                    item.chatId           // O
+                    item.chatId,          // O
+                    item.nip || '',       // P — NIP Pengusul
+                    item.urlDrive || ''   // Q — URL Drive
                 ]]
             }
         });

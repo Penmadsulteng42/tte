@@ -334,9 +334,11 @@ bot.on('document', async (ctx) => {
             anchor3: (s.anchor[2] || []).join(', '),
             penandatangan4: s.penandatangan[3] || '',
             anchor4: (s.anchor[3] || []).join(', '),
-            tahun: new Date().getFullYear(),
+            tanggal: new Date().toISOString(),
             linkFileLocal: fileUrl,
-            chatId: String(chatId)
+            chatId: String(chatId),
+            nip: String(chatId), // Gunakan chatId sebagai NIP agar difilter di dashboard
+            urlDrive: fileUrl    // Opsional, disamakan dengan fileUrl
         });
 
         delete sessions[chatId];

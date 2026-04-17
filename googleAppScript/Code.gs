@@ -127,7 +127,7 @@ function onFormSubmit(e) {
   const id  = Utilities.getUuid();
   const now = new Date();
 
-  // Append ke QUEUE_NEW
+  // Append ke QUEUE_NEW (17 Kolom: A - Q)
   queueNew.appendRow([
     id,             // A
     namaDokumen,    // B
@@ -140,10 +140,12 @@ function onFormSubmit(e) {
     anchor3,        // I (bisa kosong)
     penandatangan4, // J (bisa kosong)
     anchor4,        // K (bisa kosong)
-    tahun,          // L
+    date,           // L — Tanggal Pengajuan (datetime full)
     linkFileLocal,  // M
-    '',             // N — Status (kosong = belum diproses)
-    chatId          // O — Chat ID
+    'READY',        // N — Status (READY)
+    chatId,         // O — Chat ID
+    email,          // P — NIP / Pengusul (Email karena lewat form)
+    linkFile        // Q — URL Google Drive (dari Form)
   ]);
 
   // Rename file di Google Drive sesuai konvensi nama
