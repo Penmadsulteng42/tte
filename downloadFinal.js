@@ -164,7 +164,8 @@ async function downloadFinal(page, queueItems, downloadDir) {
                 nama: item.nama,
                 chatId: item.chatId,
                 buffer,           // PDF di memory — langsung kirim ke Telegram
-                filepath: null    // diisi jika perlu simpan ke disk
+                filepath: null,   // diisi jika perlu simpan ke disk
+                finalUrl: await found.finalBtn.first().getAttribute('href')
             });
 
         } catch (err) {

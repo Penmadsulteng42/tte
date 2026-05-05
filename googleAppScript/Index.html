@@ -71,6 +71,14 @@
                             </button>
                         </div>
 
+                        <!-- Search & Filter Controls -->
+                        <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+                            <div class="flex gap-2 w-full md:w-auto">
+                                <input type="text" id="search-input" placeholder="Cari nama dokumen..." class="border rounded-lg px-4 py-2 text-sm w-full md:w-64 focus:outline-none focus:border-indigo-500">
+                                <input type="date" id="date-filter" class="border rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-indigo-500">
+                            </div>
+                        </div>
+
                         <!-- Tabel Daftar Pengajuan -->
                         <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
                             <table class="w-full text-sm">
@@ -93,6 +101,15 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Pagination Controls -->
+                        <div class="flex justify-between items-center mt-4">
+                            <div class="text-sm text-gray-500" id="pagination-info">Menampilkan 0-0 dari 0 data</div>
+                            <div class="flex space-x-2">
+                                <button id="btn-prev" class="px-3 py-1 bg-white border rounded hover:bg-gray-50 disabled:opacity-50 transition" onclick="prevPage()"><i class="fas fa-chevron-left mr-1"></i> Sebelumnya</button>
+                                <button id="btn-next" class="px-3 py-1 bg-white border rounded hover:bg-gray-50 disabled:opacity-50 transition" onclick="nextPage()">Selanjutnya <i class="fas fa-chevron-right ml-1"></i></button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -118,6 +135,9 @@
 
     <script>
         let currentUser = null;
+        let allTTEData = [];
+        let currentPage = 1;
+        const itemsPerPage = 30;
 
         // ✅ Fungsi membuka modal form pengajuan
         function openModal() {
@@ -150,75 +170,13 @@
             google.script.run
                 .withSuccessHandler(function (rows) {
                     if (!rows || rows.length === 0) {
-                        tbody.innerHTML = `
-                            <tr>
-                                <td colspan="6" class="text-center py-10 text-gray-400 italic">
-                                    <i class="fas fa-inbox text-2xl mb-2 block"></i>
-                                    Belum ada pengajuan
-                                </td>
-                            </tr>`;
-                        return;
+                        allTTEData = [];
+                    } else {
+                        // Urutkan data dari yang terbaru (reverse)
+                        allTTEData = rows.reverse();
                     }
-
-                    tbody.innerHTML = rows.map(row => {
-                        // --- Warna badge status ---
-                        const status = String(row.status || '').toUpperCase();
-                        const statusMap = {
-                            'READY': 'bg-yellow-100 text-yellow-700 border border-yellow-200',
-                            'PROCESSING': 'bg-blue-100 text-blue-700 border border-blue-200',
-                            'SIGNED': 'bg-green-100 text-green-700 border border-green-200',
-                            'DOWNLOADED': 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-                        };
-                        const statusClass = statusMap[status] || 'bg-gray-100 text-gray-600';
-
-                        // --- Render baris Pemaraf ---
-                        // row.pemaraf = array of string ["Kabid", "Kabag"]
-                        const pemarafHTML = (row.pemaraf && row.pemaraf.length > 0)
-                            ? row.pemaraf.map((nama, i) =>
-                                `<div class="text-xs text-gray-600 leading-6">
-                                    <span class="font-semibold">${i + 1}.</span> ${nama}
-                                </div>`
-                            ).join('')
-                            : '<span class="text-gray-400 italic text-xs">Tidak Diparaf</span>';
-
-                        // --- Render baris Penandatangan ---
-                        // row.penandatangan = array of { nama, anchor }
-                        const ttdHTML = (row.penandatangan && row.penandatangan.length > 0)
-                            ? row.penandatangan.map((p, i) =>
-                                `<div class="text-xs text-gray-600 leading-6">
-                                    <span class="font-semibold">${i + 1}.</span>
-                                    ${p.nama}
-                                    <span class="ml-1 text-indigo-500 font-bold">: ${p.anchor || '-'}</span>
-                                </div>`
-                            ).join('')
-                            : '<span class="text-gray-400 italic text-xs">-</span>';
-
-                        // --- Tombol Link Drive ---
-                        const linkHTML = row.linkDrive
-                            ? `<a href="${row.linkDrive}" target="_blank"
-                                    class="inline-flex items-center space-x-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition border border-indigo-100">
-                                    <i class="fab fa-google-drive text-sm"></i>
-                                    <span>Buka</span>
-                               </a>`
-                            : '<span class="text-gray-300 text-xs italic">-</span>';
-
-                        return `
-                            <tr class="border-t hover:bg-gray-50 transition align-top">
-                                <td class="px-4 py-3 text-center text-gray-400 font-medium">${row.no}</td>
-                                <td class="px-4 py-3">
-                                    <div class="font-semibold text-gray-800">${row.namaDokumen}</div>
-                                    <div class="text-xs text-gray-400 mt-0.5">${row.tanggal}</div>
-                                </td>
-                                <td class="px-4 py-3">${pemarafHTML}</td>
-                                <td class="px-4 py-3">${ttdHTML}</td>
-                                <td class="px-4 py-3 text-center">
-                                    <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase ${statusClass}">
-                                        ${status}
-                                    </span>
-                                </td>
-                                <td class="px-4 py-3 text-center">${linkHTML}</td>
-                            </tr>`;
-                    }).join('');
+                    currentPage = 1;
+                    renderTable();
                 })
                 .withFailureHandler(function (err) {
                     tbody.innerHTML = `
@@ -230,6 +188,150 @@
                         </tr>`;
                 })
                 .getTTEList(currentUser.nip);
+        }
+
+        // ✅ Render Tabel dengan Pagination, Search, dan Date Filter
+        function renderTable() {
+            const tbody = document.getElementById('tte-table-body');
+            const searchInput = document.getElementById('search-input') ? document.getElementById('search-input').value.toLowerCase() : '';
+            const dateFilter = document.getElementById('date-filter') ? document.getElementById('date-filter').value : '';
+
+            // Filter data
+            let filteredData = allTTEData.filter(row => {
+                const matchName = (row.namaDokumen || '').toLowerCase().includes(searchInput);
+                
+                let matchDate = true;
+                if (dateFilter && row.tanggal && row.tanggal !== "-") {
+                    // row.tanggal format is "dd/MM/yyyy HH:mm" or "dd/MM/yyyy"
+                    // dateFilter format is "yyyy-MM-dd"
+                    const dateParts = dateFilter.split("-"); // [yyyy, MM, dd]
+                    const formattedFilter = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+                    matchDate = row.tanggal.startsWith(formattedFilter);
+                }
+                
+                return matchName && matchDate;
+            });
+
+            // Pagination
+            const totalItems = filteredData.length;
+            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+            
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+            const paginatedData = filteredData.slice(startIndex, endIndex);
+
+            // Update UI Pagination Info
+            if (document.getElementById('pagination-info')) {
+                document.getElementById('pagination-info').innerText = `Menampilkan ${totalItems > 0 ? startIndex + 1 : 0}-${endIndex} dari ${totalItems} data`;
+            }
+            if (document.getElementById('btn-prev')) {
+                document.getElementById('btn-prev').disabled = currentPage === 1;
+            }
+            if (document.getElementById('btn-next')) {
+                document.getElementById('btn-next').disabled = currentPage === totalPages;
+            }
+
+            if (paginatedData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-10 text-gray-400 italic">
+                            <i class="fas fa-inbox text-2xl mb-2 block"></i>
+                            Data tidak ditemukan
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = paginatedData.map(row => {
+                // --- Warna badge status ---
+                const status = String(row.status || '').toUpperCase();
+                const statusMap = {
+                    'READY': 'bg-yellow-100 text-yellow-700 border border-yellow-200',
+                    'PROCESSING': 'bg-blue-100 text-blue-700 border border-blue-200',
+                    'SIGNED': 'bg-green-100 text-green-700 border border-green-200',
+                    'DOWNLOADED': 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+                };
+                const statusClass = statusMap[status] || 'bg-gray-100 text-gray-600';
+
+                // --- Render baris Pemaraf ---
+                const pemarafHTML = (row.pemaraf && row.pemaraf.length > 0)
+                    ? row.pemaraf.map((nama, i) =>
+                        `<div class="text-xs text-gray-600 leading-6">
+                            <span class="font-semibold">${i + 1}.</span> ${nama}
+                        </div>`
+                    ).join('')
+                    : '<span class="text-gray-400 italic text-xs">Tidak Diparaf</span>';
+
+                // --- Render baris Penandatangan ---
+                const ttdHTML = (row.penandatangan && row.penandatangan.length > 0)
+                    ? row.penandatangan.map((p, i) =>
+                        `<div class="text-xs text-gray-600 leading-6">
+                            <span class="font-semibold">${i + 1}.</span>
+                            ${p.nama}
+                            <span class="ml-1 text-indigo-500 font-bold">: ${p.anchor || '-'}</span>
+                        </div>`
+                    ).join('')
+                    : '<span class="text-gray-400 italic text-xs">-</span>';
+
+                // --- Tombol Link Drive & Final ---
+                let linkHTML = '';
+                if (row.linkDrive) {
+                    linkHTML += `<a href="${row.linkDrive}" target="_blank" title="Buka Dokumen Draft"
+                            class="inline-flex items-center space-x-1 px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded text-[10px] font-bold transition border border-indigo-100 mr-1 mb-1">
+                            <i class="fab fa-google-drive"></i>
+                            <span>Draft</span>
+                       </a>`;
+                }
+                if (row.linkFinal) {
+                    linkHTML += `<a href="${row.linkFinal}" target="_blank" title="Lihat TTE Final"
+                            class="inline-flex items-center space-x-1 px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded text-[10px] font-bold transition border border-emerald-100 mb-1">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Final TTE</span>
+                       </a>`;
+                }
+                if (!linkHTML) {
+                    linkHTML = '<span class="text-gray-300 text-xs italic">-</span>';
+                }
+                
+                // DEBUG: Print data ke console browser (Tekan F12)
+                console.log("Nama Dok:", row.namaDokumen, "| linkDrive:", row.linkDrive, "| linkFinal:", row.linkFinal);
+                
+                // DEBUG: Tampilkan paksa nilai mentahnya di bawah tombol agar terlihat di layar
+                linkHTML += `<div class="text-[9px] text-red-500 mt-1 break-all">RAW S: ${row.linkFinal === "" ? "KOSONG/NULL" : row.linkFinal}</div>`;
+
+
+                return `
+                    <tr class="border-t hover:bg-gray-50 transition align-top">
+                        <td class="px-4 py-3 text-center text-gray-400 font-medium">${row.no}</td>
+                        <td class="px-4 py-3">
+                            <div class="font-semibold text-gray-800">${row.namaDokumen}</div>
+                            <div class="text-xs text-gray-400 mt-0.5">${row.tanggal}</div>
+                        </td>
+                        <td class="px-4 py-3">${pemarafHTML}</td>
+                        <td class="px-4 py-3">${ttdHTML}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase ${statusClass}">
+                                ${status}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-center">${linkHTML}</td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTable();
+            }
+        }
+
+        function nextPage() {
+            currentPage++;
+            renderTable();
         }
 
         function showPage(pageId) {
@@ -278,6 +380,9 @@
         }
 
         window.onload = () => {
+            document.getElementById('search-input')?.addEventListener('input', () => { currentPage = 1; renderTable(); });
+            document.getElementById('date-filter')?.addEventListener('change', () => { currentPage = 1; renderTable(); });
+
             const savedUser = localStorage.getItem('tte_user');
             if (savedUser) {
                 currentUser = JSON.parse(savedUser);

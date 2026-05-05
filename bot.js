@@ -323,6 +323,40 @@ bot.on('document', async (ctx) => {
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
         const fileUrl = fileLink.href;
 
+        // Generate nama file & local path
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const MM = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        const tsStr = `${yyyy}${MM}${dd}_${hh}${mm}${ss}`;
+        const fileName = `${tsStr}_${s.namaDokumen}.pdf`;
+        
+        const localDir = `G:\\My Drive\\TTE_CSV\\datasources\\Pengajuan TTE (File responses)\\Upload Dokumen (File responses)`;
+        const localPath = `${localDir}\\${fileName}`;
+
+        // Pastikan folder tersedia (optional jika Google Drive sync jalan, tapi aman ditambahkan)
+        if (!fs.existsSync(localDir)) {
+            fs.mkdirSync(localDir, { recursive: true });
+        }
+
+        // Download file PDF ke local path
+        await new Promise((resolve, reject) => {
+            const fileStream = fs.createWriteStream(localPath);
+            https.get(fileUrl, function(response) {
+                response.pipe(fileStream);
+                fileStream.on('finish', () => {
+                    fileStream.close();
+                    resolve();
+                });
+            }).on('error', function(err) {
+                fs.unlink(localPath, () => {}); // Hapus file jika gagal
+                reject(err);
+            });
+        });
+
         await appendRow({
             namaDokumen: s.namaDokumen,
             pemaraf: s.pemaraf.join(', '),
@@ -334,11 +368,11 @@ bot.on('document', async (ctx) => {
             anchor3: (s.anchor[2] || []).join(', '),
             penandatangan4: s.penandatangan[3] || '',
             anchor4: (s.anchor[3] || []).join(', '),
-            tanggal: new Date().toISOString(),
-            linkFileLocal: fileUrl,
+            tanggal: now.getFullYear(),
+            linkFileLocal: localPath, // Simpan path lokal (G:\My Drive\...)
             chatId: String(chatId),
-            nip: String(chatId), // Gunakan chatId sebagai NIP agar difilter di dashboard
-            urlDrive: fileUrl    // Opsional, disamakan dengan fileUrl
+            nip: String(chatId),
+            urlDrive: fileUrl    // Simpan link Telegram as backup URL
         });
 
         delete sessions[chatId];

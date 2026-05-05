@@ -61,7 +61,7 @@ async function readRows() {
             anchor3: row[8] || '',
             penandatangan4: row[9] || '',
             anchor4: row[10] || '',
-            tanggal: row[11] || '',
+            tahun: row[11] || '',
             linkFileLocal: row[12] || '',
             status: row[13] || '',
             chatId: row[14] || '',
@@ -97,9 +97,20 @@ async function appendRow(item) {
         const authClient = await auth.getClient();
         const sheets = google.sheets({ version: 'v4', auth: authClient });
 
-        await sheets.spreadsheets.values.append({
+        // ── Cari baris terakhir yang terisi di kolom A ──
+        // Tidak pakai values.append karena API bisa salah deteksi "tabel"
+        // ketika banyak kolom di tengah kosong (pen2-4, anchor2-4),
+        // akibatnya data baru ditulis mulai kolom L bukan kolom A.
+        const colARes = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: `${SHEET_NAME}!A:Q`,
+            range: `${SHEET_NAME}!A:A`
+        });
+        const nextRow = (colARes.data.values || []).length + 1;
+
+        // ── Tulis ke baris berikutnya dengan range eksplisit mulai A ──
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!A${nextRow}:S${nextRow}`,
             valueInputOption: 'USER_ENTERED',
             requestBody: {
                 values: [[
@@ -114,12 +125,14 @@ async function appendRow(item) {
                     item.anchor3,         // I
                     item.penandatangan4,  // J
                     item.anchor4,         // K
-                    item.tanggal,         // L — Tanggal Pengajuan
+                    new Date().getFullYear(), // L — Tahun
                     item.linkFileLocal,   // M
                     'READY',              // N — READY = data lengkap, siap diproses
                     item.chatId,          // O
                     item.nip || '',       // P — NIP Pengusul
-                    item.urlDrive || ''   // Q — URL Drive
+                    item.urlDrive || '',  // Q — URL Drive
+                    item.tanggal || new Date().toISOString(), // R — Tanggal Pengajuan
+                    ''                    // S — Link TTE Final
                 ]]
             }
         });
@@ -151,6 +164,24 @@ async function updateStatus(rowNumber, status) {
     }
 }
 
+async function updateFinalLink(rowNumber, url) {
+    try {
+        const authClient = await auth.getClient();
+        const sheets = google.sheets({ version: 'v4', auth: authClient });
+
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_NAME}!S${rowNumber}`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [[url]] }
+        });
+
+        console.log(`🔗 Link Final TTE tersimpan di baris ${rowNumber}`);
+    } catch (err) {
+        console.error(`❌ Gagal update link final baris ${rowNumber}:`, err.message);
+    }
+}
+
 async function getLastModifiedTime() {
     try {
         const authClient = await auth.getClient();
@@ -168,4 +199,4 @@ async function getLastModifiedTime() {
     }
 }
 
-module.exports = { readRows, appendRow, updateStatus, getLastModifiedTime };
+module.exports = { readRows, appendRow, updateStatus, updateFinalLink, getLastModifiedTime };

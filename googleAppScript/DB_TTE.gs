@@ -23,7 +23,7 @@
  */
 
 const SS_ID = '1sOWTiTA2RjiWbl8UuRw8D-p_tqEsy8LrHXmrDRquYDY';
-const FOLDER_UPLOAD_ID = '1Lnjr-tWYTYmVvxaA0e3sicT6eeP12yum';
+const FOLDER_UPLOAD_ID = '1uxMrYLvNgsvOdoGrwZmgZHE2d4glFqSKp09wG02yjjY3CnHIOXQO78NoK02OJ18TZHF23KR5';
 
 // ============================================================
 // SIMPAN PENGAJUAN BARU
@@ -72,12 +72,14 @@ function saveSubmission(payload, userNip) {
       payload.a3 ? payload.a3.join(', ') : "", // I : Anchor 3
       payload.p4 || "",                     // J : Penandatangan 4
       payload.a4 ? payload.a4.join(', ') : "", // K : Anchor 4
-      now,                                  // L : Tanggal Pengajuan ✅ (full datetime)
+      now.getFullYear(),                    // L : Tahun
       linkFileLocal,                        // M : Link Lokal (RPA)
       "READY",                            // N : Status
       "",                                   // O : Chat ID
       userNip,                              // P : NIP Pengusul
-      fileUrl                               // Q : URL Google Drive ✅ (baru)
+      fileUrl,                              // Q : URL Google Drive
+      now,                                  // R : Tanggal Pengajuan (baru)
+      ""                                    // S : Link TTE Final
     ];
 
     sheet.appendRow(newRow);
@@ -127,20 +129,20 @@ function getTTEList(userNip) {
       ].filter(p => p.nama && String(p.nama).trim() !== "");
 
       // --- Format Tanggal ---
-      // Kolom L (r[11]) sekarang menyimpan full datetime
+      // Kolom R (r[17]) sekarang menyimpan full datetime
       let tanggal = "-";
-      if (r[11]) {
+      if (r[17]) {
         try {
-          tanggal = Utilities.formatDate(new Date(r[11]), "GMT+8", "dd/MM/yyyy");
+          tanggal = Utilities.formatDate(new Date(r[17]), "GMT+8", "dd/MM/yyyy");
         } catch (e) {
-          tanggal = String(r[11]);
+          tanggal = String(r[17]);
         }
       }
 
       return {
         no            : index + 1,
         namaDokumen   : r[1]  || "-",          // Kolom B
-        tanggal       : tanggal,               // Kolom L (diformat)
+        tanggal       : tanggal,               // Kolom R (diformat)
         pemaraf       : pemarafArr,            // Array string
         penandatangan : pasanganPenandatangan, // Array { nama, anchor }
         status        : r[13] || "READY",    // Kolom N

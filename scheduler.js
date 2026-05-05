@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
 
-const { readRows, updateStatus, getLastModifiedTime } = require('./sheets');
+const { readRows, updateStatus, updateFinalLink, getLastModifiedTime } = require('./sheets');
 const { url } = require('./config');
 const { notifyDone, notifyError } = require('./notify');
 
@@ -63,6 +63,36 @@ function statusDraft(item) {
 }
 
 /**
+ * Ekstrak angka tahun dari berbagai format kolom L:
+ *   2026                    → 2026  (angka langsung dari getFullYear())
+ *   "2026"                  → 2026  (string angka)
+ *   "20/04/2026 10:53:55"   → 2026  (format dd/mm/yyyy hh:mm:ss)
+ *   "2026-04-20T01:07:35Z"  → 2026  (ISO string, fallback)
+ */
+function getYearFromTahun(val) {
+    if (!val) return 0;
+    const s = String(val).trim();
+
+    // Format dd/mm/yyyy (dengan atau tanpa jam)
+    const dmyMatch = s.match(/^\d{2}\/\d{2}\/(\d{4})/);
+    if (dmyMatch) return parseInt(dmyMatch[1], 10);
+
+    // Angka murni atau string angka: "2026" / 2026
+    const num = parseInt(s, 10);
+    if (!isNaN(num) && num > 1900 && num < 2100) return num;
+
+    // Fallback: parse sebagai Date (ISO, dll)
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.getFullYear();
+
+    return 0;
+}
+
+function tahunValid(item) {
+    return getYearFromTahun(item.tahun) > 2025;
+}
+
+/**
  * Fungsi baru: Periksa status di aplikasi TTE untuk dokumen UPLOADED/PARAFED/DRAFT.
  * Jika sudah final (Sukses + tombol FINAL), update status di spreadsheet ke SIGNED dan langsung download.
  */
@@ -94,6 +124,11 @@ async function checkAndUpdateSignedStatus(browser, queue) {
 
                 if (processed && processed.length > 0) {
                     const doc = processed[0];
+
+                    if (doc.finalUrl) {
+                        await updateFinalLink(item.row, doc.finalUrl);
+                    }
+
                     const terkirim = await notifyDone(item.chatId, item.nama, doc.buffer, doc.filename);
                     if (terkirim) {
                         await updateStatus(item.row, 'SENT');
@@ -111,7 +146,7 @@ async function checkAndUpdateSignedStatus(browser, queue) {
 /** Ringkas isi sheet: download / paraf / TTE / upload */
 function logScanSpreadsheet(queue, pass) {
     const isV = i => i.linkFileLocal && i.penandatangan1 && i.nama;
-    const tahunOk = i => i.tahun > 2025;
+    const tahunOk = i => tahunValid(i);
 
     const nDownload = queue.filter(i => statusKolomNBisaDiunduh(i) && tahunOk(i)).length;
     const nParaf = queue.filter(i => statusUploaded(i) && tahunOk(i) && butuhParafKabid(i)).length;
@@ -197,22 +232,22 @@ async function runRPA() {
 
             logScanSpreadsheet(updatedQueue, pass);
 
-            const toUpload = updatedQueue.filter(i => antrianPerluUpload(i) && i.tahun > 2025 && isValid(i));
+            const toUpload = updatedQueue.filter(i => antrianPerluUpload(i) && tahunValid(i) && isValid(i));
 
-            const invalidRows = updatedQueue.filter(i => antrianPerluUpload(i) && i.tahun > 2025 && !isValid(i));
+            const invalidRows = updatedQueue.filter(i => antrianPerluUpload(i) && tahunValid(i) && !isValid(i));
             if (invalidRows.length > 0) {
                 console.warn(`⚠️ ${invalidRows.length} baris (N kosong/READY) dilewati — data tidak lengkap:`);
                 invalidRows.forEach(i => console.warn(`   - Baris ${i.row}: ${i.nama || '(tanpa nama)'}`));
             }
 
             const toParaf = updatedQueue.filter(i =>
-                statusUploaded(i) && i.tahun > 2025 && butuhParafKabid(i)
+                statusUploaded(i) && tahunValid(i) && butuhParafKabid(i)
             );
             const toSign = updatedQueue.filter(i =>
                 (statusParafed(i) || (statusUploaded(i) && !butuhParafKabid(i))) &&
-                i.tahun > 2025
+                tahunValid(i)
             );
-            const toDownload = updatedQueue.filter(i => statusKolomNBisaDiunduh(i) && i.tahun > 2025);
+            const toDownload = updatedQueue.filter(i => statusKolomNBisaDiunduh(i) && tahunValid(i));
 
             if (toUpload.length === 0 && toParaf.length === 0 && toSign.length === 0 && toDownload.length === 0) {
                 if (pass === 0) {
@@ -253,7 +288,7 @@ async function runRPA() {
             /* ========== KABID: PARAF ELEKTRONIK ========== */
             const queueAfterUpload = await readRows();
             const toParafFinal = queueAfterUpload.filter(i =>
-                statusUploaded(i) && i.tahun > 2025 && butuhParafKabid(i)
+                statusUploaded(i) && tahunValid(i) && butuhParafKabid(i)
             );
 
             if (toParafFinal.length > 0) {
@@ -279,7 +314,7 @@ async function runRPA() {
             const queueAfterParaf = await readRows();
             const toSignFinal = queueAfterParaf.filter(i =>
                 (statusParafed(i) || (statusUploaded(i) && !butuhParafKabid(i))) &&
-                i.tahun > 2025
+                tahunValid(i)
             );
 
             if (toSignFinal.length > 0) {
@@ -309,7 +344,7 @@ async function runRPA() {
 
             /* ========== ADMIN: DOWNLOAD (hanya baris kolom N = SIGNED) ========== */
             const queueAfterSign = await readRows();
-            const toDownloadFinal = queueAfterSign.filter(i => statusKolomNBisaDiunduh(i) && i.tahun > 2025);
+            const toDownloadFinal = queueAfterSign.filter(i => statusKolomNBisaDiunduh(i) && tahunValid(i));
 
             if (toDownloadFinal.length > 0) {
                 // Jalankan download 1 per 1 per pass untuk mengisolasi error per dokumen.
@@ -322,6 +357,9 @@ async function runRPA() {
 
                 const downloadedItems = await downloadFinal(dlPage, batch, downloadDir);
                 for (const item of downloadedItems) {
+                    if (item.finalUrl) {
+                        await updateFinalLink(item.row, item.finalUrl);
+                    }
                     if (item.chatId) {
                         const terkirim = await notifyDone(item.chatId, item.nama, item.buffer, item.filename);
                         if (terkirim) {
@@ -343,10 +381,10 @@ async function runRPA() {
 
         const sisa = await readRows();
         const masih = {
-            upload: sisa.filter(i => antrianPerluUpload(i) && i.tahun > 2025 && i.linkFileLocal && i.penandatangan1 && i.nama).length,
-            paraf: sisa.filter(i => statusUploaded(i) && i.tahun > 2025 && butuhParafKabid(i)).length,
-            tte: sisa.filter(i => (statusParafed(i) || (statusUploaded(i) && !butuhParafKabid(i))) && i.tahun > 2025).length,
-            unduh: sisa.filter(i => statusKolomNBisaDiunduh(i) && i.tahun > 2025).length
+            upload: sisa.filter(i => antrianPerluUpload(i) && tahunValid(i) && i.linkFileLocal && i.penandatangan1 && i.nama).length,
+            paraf: sisa.filter(i => statusUploaded(i) && tahunValid(i) && butuhParafKabid(i)).length,
+            tte: sisa.filter(i => (statusParafed(i) || (statusUploaded(i) && !butuhParafKabid(i))) && tahunValid(i)).length,
+            unduh: sisa.filter(i => statusKolomNBisaDiunduh(i) && tahunValid(i)).length
         };
         if (masih.upload || masih.paraf || masih.tte || masih.unduh) {
             console.log(
