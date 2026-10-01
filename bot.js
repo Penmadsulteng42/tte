@@ -522,24 +522,37 @@ bot.on('callback_query', async (ctx) => {
 //  Jalankan bot dengan auto-restart jika 409 conflict
 // ============================================================
 async function launchBot(retryCount = 0) {
+    if (!telegram.token || !telegram.token.trim()) {
+        console.warn('⚠️ Token bot Telegram tidak tersedia, bot dinonaktifkan. Scheduler tetap berjalan.');
+        return;
+    }
+
     try {
         await bot.launch();
         console.log('🤖 TTE Bot aktif dan siap menerima pesan...');
     } catch (err) {
-        if (err.message && err.message.includes('409')) {
+        const msg = err && err.message ? err.message : String(err);
+        if (msg.includes('409')) {
             const delay = Math.min(5000 * (retryCount + 1), 30000);
             console.warn(`⚠️ Bot conflict (409) — kemungkinan ada instance lain yang berjalan.`);
-            console.warn(`   Pastikan hanya satu "node app.js" yang berjalan.`);
+            console.warn(`   Pastakan hanya satu "node app.js" yang berjalan.`);
             console.warn(`   Mencoba ulang dalam ${delay / 1000} detik... (percobaan ${retryCount + 1})`);
             await new Promise(resolve => setTimeout(resolve, delay));
             return launchBot(retryCount + 1);
         }
-        // Error lain — lempar ke atas
-        throw err;
+        console.warn(`⚠️ Bot Telegram tidak dapat dimulai (${msg}). Scheduler tetap berjalan tanpa bot Telegram.`);
     }
 }
 
 launchBot();
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', () => {
+    if (typeof bot.stop === 'function') {
+        bot.stop('SIGINT');
+    }
+});
+process.once('SIGTERM', () => {
+    if (typeof bot.stop === 'function') {
+        bot.stop('SIGTERM');
+    }
+});

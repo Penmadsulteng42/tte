@@ -3,6 +3,29 @@ const path = require('path');
 const { url } = require('./config');
 const { docKey, sanitize } = require('./utils');
 
+const backupDownloadDir = path.win32.join('G:\\', 'My Drive', 'te_otomatis', 'downloads');
+
+function ensureDir(targetDir) {
+    if (!targetDir) return;
+    if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+    }
+}
+
+function buildUniqueFilepath(targetDir, filename) {
+    ensureDir(targetDir);
+
+    let candidate = path.join(targetDir, filename);
+    if (!fs.existsSync(candidate) || fs.statSync(candidate).size === 0) {
+        return candidate;
+    }
+
+    const ts = Date.now();
+    const ext = path.extname(filename);
+    const base = path.basename(filename, ext);
+    return path.join(targetDir, `${base}_${ts}${ext}`);
+}
+
 /** Status di aplikasi TTE masih tahap dokumen belum final (multi penandatangan) */
 
 function formatDownloadDate(waktu) {
@@ -183,22 +206,26 @@ async function downloadFinal(page, queueItems, downloadDir) {
         }
     }
 
-    // Simpan ke disk hanya untuk item tanpa chatId (dari Google Form)
-    if (downloadDir) {
-        for (const item of processedItems) {
-            if (!item.chatId) {
-                let filepath = path.join(downloadDir, item.filename);
+    // Simpan hasil final ke folder lokal dan juga ke folder Google Drive
+    const targetDirs = [downloadDir, backupDownloadDir].filter(Boolean);
 
-                if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
-                    const ts = Date.now();
-                    const ext = path.extname(item.filename);
-                    const base = path.basename(item.filename, ext);
-                    filepath = path.join(downloadDir, `${base}_${ts}${ext}`);
+    for (const targetDir of targetDirs) {
+        ensureDir(targetDir);
+    }
+
+    for (const item of processedItems) {
+        for (const targetDir of targetDirs) {
+            try {
+                const filepath = buildUniqueFilepath(targetDir, item.filename);
+                fs.writeFileSync(filepath, item.buffer);
+
+                if (targetDir === downloadDir) {
+                    item.filepath = filepath;
                 }
 
-                fs.writeFileSync(filepath, item.buffer);
-                item.filepath = filepath;
-                console.log(`   💾 Disimpan ke disk: ${path.basename(filepath)}`);
+                console.log(`   💾 Disimpan ke: ${path.basename(filepath)} (${targetDir})`);
+            } catch (err) {
+                console.warn(`   ⚠️ Gagal simpan ke ${targetDir}: ${err.message}`);
             }
         }
     }

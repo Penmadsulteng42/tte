@@ -1,12 +1,6 @@
-const cron = require('node-cron');
-const path = require('path');
-const fs = require('fs');
 const { chromium } = require('playwright');
-
 const { readRows, updateStatus, updateFinalLink, getLastModifiedTime } = require('./sheets');
-const { url } = require('./config');
 const { notifyDone, notifyError } = require('./notify');
-
 const loginAdmin = require('./loginAdmin');
 const uploadDocument = require('./uploadDocument');
 const logout = require('./logout');
@@ -15,7 +9,8 @@ const signParaf = require('./signParaf');
 const loginSigner = require('./loginSigner');
 const signInbox = require('./signInbox');
 const downloadFinal = require('./downloadFinal');
-const { shouldProcessQueue } = require('./queueLogic');
+const path = require('path');
+const fs = require('fs');
 
 const downloadDir = path.join(__dirname, 'downloads');
 if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir);
@@ -38,7 +33,7 @@ function statusNorm(item) {
     return String(item.status ?? '').trim().toUpperCase();
 }
 
-/** Kolom N = SIGNED atau FINAL → unduh / update link hasil TTE */
+/** Kolom N = SIGNED atau FINAL → unduh / kirim hasil TTE */
 function statusKolomNBisaDiunduh(item) {
     return ['SIGNED', 'FINAL'].includes(statusNorm(item));
 }
@@ -79,7 +74,7 @@ function getYearFromTahun(val) {
     const dmyMatch = s.match(/^\d{2}\/\d{2}\/(\d{4})/);
     if (dmyMatch) return parseInt(dmyMatch[1], 10);
 
-    // Angka murni atau string angka: "2026" / "2025"
+    // Angka murni atau string angka: "2026" / 2025
     const num = parseInt(s, 10);
     if (!isNaN(num) && num > 1900 && num < 2100) return num;
 
@@ -183,54 +178,11 @@ function logScanSpreadsheet(queue, pass) {
 const LAST_MODIFIED_FILE = path.join(__dirname, 'last_modified.json');
 
 async function runRPA() {
-    // Cek apakah ada perubahan di spreadsheet
-    const currentModified = await getLastModifiedTime();
-    if (!currentModified) {
-        console.log('⚠️ Gagal cek modifiedTime, skip giliran ini...');
-        return;
-    }
-
-    let lastModified = 0;
-    if (fs.existsSync(LAST_MODIFIED_FILE)) {
-        try {
-            const data = JSON.parse(fs.readFileSync(LAST_MODIFIED_FILE, 'utf8'));
-            lastModified = data.modifiedTime || 0;
-        } catch (err) {
-            console.warn('⚠️ Gagal baca last_modified.json:', err.message);
-        }
-    }
-
-    const queue = await readRows();
-    const shouldRun = shouldProcessQueue({ currentModified, lastModified, queue });
-
-    if (!shouldRun) {
-        console.log('📄 Tidak ada perubahan di spreadsheet dan tidak ada antrian pending, sistem diam...');
-        return;
-    }
-
-    if (currentModified > lastModified) {
-        console.log('📄 Deteksi perubahan di spreadsheet, mulai proses...');
-    } else {
-        console.log('📄 Ada antrian pending yang belum diproses, mulai proses...');
-    }
-
     if (isRunning) {
-        console.log('⏳ RPA masih berjalan, skip giliran ini...');
+        console.log('⏳ RPA sedang berjalan, skip...');
         return;
     }
-
     isRunning = true;
-    console.log(`\n${'='.repeat(50)}`);
-    console.log(`🤖 RPA dimulai: ${new Date().toLocaleString('id-ID')}`);
-    console.log('='.repeat(50));
-
-    // Update lastModified setelah mulai proses
-    try {
-        fs.writeFileSync(LAST_MODIFIED_FILE, JSON.stringify({ modifiedTime: currentModified }));
-        console.log('📝 Last modified time updated');
-    } catch (err) {
-        console.warn('⚠️ Gagal simpan last_modified.json:', err.message);
-    }
 
     const browser = await chromium.launch({
         headless: true,
@@ -353,99 +305,77 @@ async function runRPA() {
                         (item.penandatangan2 && String(item.penandatangan2).trim()) ||
                         (item.penandatangan3 && String(item.penandatangan3).trim()) ||
                         (item.penandatangan4 && String(item.penandatangan4).trim());
-                    const newStatus = hasMultiSigner ? 'DRAFT' : 'SIGNED';
 
-                    await updateStatus(item.row, newStatus);
-                    console.log(`✅ ${item.nama} → ${newStatus}`);
+                    if (hasMultiSigner) {
+                        await updateStatus(item.row, 'DRAFT');
+                        console.log(`✅ ${item.nama} → DRAFT (multi-signer)`);
+                    } else {
+                        await updateStatus(item.row, 'SIGNED');
+                        console.log(`✅ ${item.nama} → SIGNED`);
+                    }
                 }
 
                 await logout(signerPage);
                 await signerCtx.close();
-                console.log('\n⏳ Menunggu server memproses TTE (10 detik)...');
-                await new Promise(resolve => setTimeout(resolve, 10000));
             }
 
-            /* ========== ADMIN: DOWNLOAD (hanya baris kolom N = SIGNED) ========== */
+            /* ========== DOWNLOAD FINAL ========== */
             const queueAfterSign = await readRows();
             const toDownloadFinal = queueAfterSign.filter(i => statusKolomNBisaDiunduh(i) && tahunValid(i));
 
             if (toDownloadFinal.length > 0) {
-                // Jalankan download 1 per 1 per pass untuk mengisolasi error per dokumen.
-                const batch = toDownloadFinal.slice(0, 1);
-                console.log(`\n========== DOWNLOAD (1 dari ${toDownloadFinal.length} dokumen SIGNED) ==========`);
-                const dlCtx = await browser.newContext({ viewport: null });
-                const dlPage = await dlCtx.newPage();
-                dlPage.setDefaultTimeout(60000);
-                await loginAdmin(dlPage);
+                console.log(`\n========== DOWNLOAD (${toDownloadFinal.length} dokumen) ==========`);
+                const downloadCtx = await browser.newContext({ viewport: null });
+                const downloadPage = await downloadCtx.newPage();
+                downloadPage.setDefaultTimeout(60000);
+                await loginAdmin(downloadPage);
 
-                const downloadedItems = await downloadFinal(dlPage, batch, downloadDir);
-                for (const item of downloadedItems) {
-                    if (item.finalUrl) {
-                        await updateFinalLink(item.row, item.finalUrl);
-                    }
-                    if (item.chatId) {
-                        const terkirim = await notifyDone(item.chatId, item.nama, item.buffer, item.filename);
+                const processed = await downloadFinal(browser, toDownloadFinal);
+                for (const doc of processed) {
+                    const item = toDownloadFinal.find(i => i.nama === doc.nama);
+                    if (item) {
+                        if (doc.finalUrl) {
+                            await updateFinalLink(item.row, doc.finalUrl);
+                        }
+
+                        const terkirim = await notifyDone(item.chatId, item.nama, doc.buffer, doc.filename);
                         if (terkirim) {
                             await updateStatus(item.row, 'SENT');
-                            console.log(`✅ ${item.nama} → SENT (terkirim ke Telegram)`);
+                            console.log(`✅ ${item.nama} → SENT`);
                         } else {
                             await updateStatus(item.row, 'DOWNLOADED');
-                            console.log(`⚠️ ${item.nama} → DOWNLOADED (gagal kirim Telegram)`);
+                            console.log(`✅ ${item.nama} → DOWNLOADED`);
                         }
-                    } else {
-                        await updateStatus(item.row, 'DOWNLOADED');
-                        console.log(`✅ ${item.nama} → DOWNLOADED (disimpan ke disk)`);
                     }
                 }
-                await dlCtx.close();
+
+                await logout(downloadPage);
+                await downloadCtx.close();
             }
 
-        } /* end for pass */
+            // Jika masih ada antrian, baca ulang dan lanjut pass berikutnya
+            const sisa = await readRows();
+            const masih = {
+                upload: sisa.filter(i => antrianPerluUpload(i) && tahunValid(i) && isValid(i)).length,
+                paraf: sisa.filter(i => statusUploaded(i) && tahunValid(i) && butuhParafKabid(i)).length,
+                tte: sisa.filter(i => (statusParafed(i) || (statusUploaded(i) && !butuhParafKabid(i))) && tahunValid(i)).length,
+                unduh: sisa.filter(i => statusKolomNBisaDiunduh(i) && tahunValid(i)).length
+            };
 
-        const sisa = await readRows();
-        const masih = {
-            upload: sisa.filter(i => antrianPerluUpload(i) && tahunValid(i) && i.linkFileLocal && i.penandatangan1 && i.nama).length,
-            paraf: sisa.filter(i => statusUploaded(i) && tahunValid(i) && butuhParafKabid(i)).length,
-            tte: sisa.filter(i => (statusParafed(i) || (statusUploaded(i) && !butuhParafKabid(i))) && tahunValid(i)).length,
-            unduh: sisa.filter(i => statusKolomNBisaDiunduh(i) && tahunValid(i)).length
-        };
-        if (masih.upload || masih.paraf || masih.tte || masih.unduh) {
-            console.log(
-                `\n📌 Ringkasan antrian setelah pass terakhir: ` +
-                `UPLOAD ${masih.upload} | PARAF ${masih.paraf} | TTE ${masih.tte} | DOWNLOAD ${masih.unduh}`
-            );
-            console.log(`   (Jika masih >0 dan cap ${MAX_SCHEDULER_PASSES} pass, sisa diproses jadwal cron berikutnya)`);
+            if (masih.upload || masih.paraf || masih.tte || masih.unduh) {
+                console.log(`\n⏳ Masih ada antrian: UPLOAD ${masih.upload} | PARAF ${masih.paraf} | TTE ${masih.tte} | DOWNLOAD ${masih.unduh}`);
+                if (pass + 1 < MAX_SCHEDULER_PASSES) {
+                    console.log('   → Lanjut pass berikutnya...');
+                }
+            } else {
+                console.log('\n✅ Semua antrian selesai diproses.');
+                break;
+            }
         }
-
-    } catch (err) {
-        console.error('❌ Error tidak terduga di RPA:', err.message);
     } finally {
         await browser.close();
         isRunning = false;
-        console.log(`\n✅ RPA selesai: ${new Date().toLocaleString('id-ID')}`);
     }
 }
 
-console.log('⏰ Scheduler aktif — RPA akan berjalan hanya jika ada perubahan di Google Sheets');
-console.log('   Ketik Ctrl+C untuk menghentikan\n');
-
-runRPA();
-cron.schedule('*/2 * * * *', () => { runRPA(); });
-
-// Cron terpisah untuk pengecekan status DRAFT setiap 5 menit
-cron.schedule('*/2 * * * *', async () => {
-    console.log('🔍 Memeriksa status DRAFT di TTE Kemenag...');
-    const browser = await chromium.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-    });
-    try {
-        const queue = await readRows();
-        await checkAndUpdateSignedStatus(browser, queue);
-        console.log('✅ Pengecekan status DRAFT selesai');
-    } catch (err) {
-        console.error('❌ Error checking DRAFT status:', err.message);
-    } finally {
-        await browser.close();
-    }
-});
+runRPA().then(() => console.log('RPA selesai')).catch(console.error);

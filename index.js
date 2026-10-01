@@ -105,9 +105,12 @@ const downloadFinal = require('./downloadFinal');
 
     await loginAdmin(downloadPage);
 
-    // Baca ulang untuk status SIGNED terbaru
+    // Baca ulang untuk status SIGNED/FINAL terbaru
     queue = await readRows();
-    const toDownload = queue.filter(i => i.status === 'SIGNED' && i.tahun > 2025);
+    const toDownload = queue.filter(i => {
+        const status = String(i.status || '').trim().toUpperCase();
+        return (status === 'SIGNED' || status === 'FINAL') && i.tahun > 2025;
+    });
 
     if (toDownload.length > 0) {
         console.log(`📋 Ditemukan ${toDownload.length} dokumen untuk didownload`);
